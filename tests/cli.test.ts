@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { commandName, packageName, platformKey } from "../npm/platforms";
 import { buildPackages, npmCommand } from "../scripts/npm";
 
 test("npm CLI uses the matching binary, reads ~/.myre/tools, and preserves exit codes", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "myre-cli-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "myre-cli-test-~ "));
   const windows = process.platform === "win32";
   const command = windows ? "diana.exe" : "diana";
   const consumer = join(directory, "consumer");
@@ -81,7 +81,7 @@ test("npm CLI uses the matching binary, reads ~/.myre/tools, and preserves exit 
         dependencies: Object.fromEntries(
           packages.map((pkg) => [
             pkg.name,
-            pathToFileURL(join(output, pkg.file)).href,
+            `file:${relative(consumer, join(output, pkg.file)).replaceAll("\\", "/")}`,
           ]),
         ),
       }),
