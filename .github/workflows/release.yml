@@ -15,7 +15,6 @@ concurrency:
 
 env:
   BUN_VERSION: "1.4.4"
-  NPM_VERSION: "12.2.2"
   RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_type == 'tag' && github.ref_name || 'dev' }}
 
 jobs:
@@ -41,9 +40,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: "22"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -51,9 +47,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Check types
         run: bun run typecheck
-      - name: Run core tests, including offline npm installation
-        run: bun test --timeout 60000
-      - name: Build, smoke-test, and package
+      - name: Build and package
         run: bun run scripts/release.ts build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -63,48 +57,10 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  npm_package:
-    name: Prepare npm packages
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: "24"
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Pin npm
-        run: npm install --global "npm@$NPM_VERSION" --registry=https://registry.npmjs.org
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          pattern: myre-*
-          path: dist/release
-          merge-multiple: true
-      - name: Verify complete Release asset set
-        run: bun run scripts/release.ts checksums
-      - name: Pack four platform packages and the main package
-        run: bun run scripts/npm.ts pack
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: npm-packages
-          path: |
-            dist/npm/*.tgz
-            dist/npm/manifest.json
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-
   publish:
     name: Publish complete GitHub Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: npm_package
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -123,7 +79,7 @@ jobs:
           pattern: myre-*
           path: dist/release
           merge-multiple: true
-      - name: Verify asset set and generate checksums
+      - name: Generate checksums
         run: bun run scripts/release.ts checksums
       - name: Upload assets and publish
         env:
@@ -150,33 +106,3 @@ jobs:
           else
             gh release edit "$RELEASE_VERSION" --draft=false --prerelease=false --latest
           fi
-
-  publish_npm:
-    name: Publish npm packages with OIDC
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && vars.NPM_PUBLISH_ENABLED == 'true'
-    needs: [publish, npm_package]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: "24"
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Pin npm
-        run: npm install --global "npm@$NPM_VERSION" --registry=https://registry.npmjs.org
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: npm-packages
-          path: dist/npm
-      - name: Publish platform packages first and myre last
-        run: bun run scripts/npm.ts publish

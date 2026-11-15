@@ -1,18 +1,19 @@
 #!/usr/bin/env bun
 import { ToolManager } from "./src/manager";
-import { tools } from "./src/tools";
+import { loadTools } from "./src/catalog";
 
 const help = `myre - reverse-engineering CLI tool manager
 
 Usage:
-  myre list
+  myre list [--refresh]
   myre install [<tool> | --all | -all]
   myre install <tool> --version <tag>
   myre update <tool> [--yes]
   myre uninstall <tool>
 
-list reads local state without network access.
-install defaults to all tools; --version requires a single tool.
+list reads local state without network access; --refresh fetches the tool catalog.
+install and update refresh the remote tool catalog, with a cached or bundled fallback.
+install defaults to all tools supported on this platform; --version requires a single tool.
 Existing installations are not upgraded by install.
 update compares tags and shows release/compare links before confirmation.
 uninstall removes managed versions and command links without network access.
@@ -21,7 +22,7 @@ Non-interactive updates require --yes. No GitHub API or token is used.
 
 type Command =
   | { name: "help" }
-  | { name: "list" }
+  | { name: "list"; refresh: boolean }
   | { name: "install"; tool?: string; version?: string }
   | { name: "update"; tool: string; yes: boolean }
   | { name: "uninstall"; tool: string };
@@ -33,7 +34,12 @@ export function parseArgs(args: string[]): Command {
   )
     return { name: "help" };
   const [command, tool, ...flags] = args;
-  if (command === "list" && args.length === 1) return { name: "list" };
+  if (command === "list") {
+    if (args.length === 1) return { name: "list", refresh: false };
+    if (args.length === 2 && tool === "--refresh")
+      return { name: "list", refresh: true };
+    throw new Error("list accepts only --refresh.");
+  }
   if (!["install", "update", "uninstall"].includes(command!))
     throw new Error(`Invalid command: ${command}`);
   if (command === "install" && (!tool || ["--all", "-all"].includes(tool))) {
@@ -87,13 +93,18 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
       console.log(help);
       return 0;
     }
+    const refresh =
+      command.name === "install" ||
+      command.name === "update" ||
+      (command.name === "list" && command.refresh);
+    const tools = await loadTools(refresh);
     const manager = new ToolManager(tools, { confirm });
     switch (command.name) {
       case "list": {
         const rows = await manager.list();
         if (!rows.length) {
           console.log(
-            "No tools configured. Register tool definitions in src/tools.ts.",
+            "No tools in the current catalog. Use myre list --refresh to refresh it.",
           );
           break;
         }
@@ -122,7 +133,15 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
       case "install": {
         const names = command.tool
           ? [command.tool]
-          : tools.map((tool) => tool.name);
+          : tools
+              .filter(
+                (tool) =>
+                  !tool.supports ||
+                  tool.supports({ os: process.platform, arch: process.arch }),
+              )
+              .map((tool) => tool.name);
+        if (!names.length)
+          throw new Error("No catalog tools support this platform.");
         for (const name of names)
           await manager.install(name, { version: command.version });
         break;

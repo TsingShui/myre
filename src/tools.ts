@@ -14,98 +14,55 @@ export interface Platform {
   arch: string;
 }
 
-export interface ToolDefinition {
+export interface ToolIdentity {
   name: string;
-  description: string;
   repository: string;
   command?: string;
+}
+
+export interface ToolDefinition extends ToolIdentity {
+  description: string;
+  supports?(platform: Platform): boolean;
   acceptRelease?(release: Release): boolean;
   selectAssets(release: Release, platform: Platform): AssetSelection[];
   verifyArgs: string[];
 }
 
-function architecture(platform: Platform): "x86_64" | "aarch64" {
-  if (platform.arch === "x64") return "x86_64";
-  if (platform.arch === "arm64") return "aarch64";
-  throw new Error(`Unsupported CPU architecture: ${platform.arch}`);
+export function platformKey(platform: Platform): string {
+  const os =
+    platform.os === "darwin"
+      ? "macos"
+      : platform.os === "win32"
+        ? "windows"
+        : platform.os;
+  return `${os}-${platform.arch}`;
 }
 
-function archives(
-  names: string[],
-  binaryPath: (name: string) => string,
-  format: "tar.gz" | "zip" = "tar.gz",
-): AssetSelection[] {
-  return names.map((name) => ({
-    name,
-    format,
-    binaryPath: binaryPath(name),
-  }));
+export function validateIdentity(tool: ToolIdentity): void {
+  const command = tool.command ?? tool.name;
+  if (
+    !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(tool.name) ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(command) ||
+    ["receipt.json", "myre", "myre.exe"].includes(command.toLowerCase()) ||
+    !/^[\w.-]+\/[\w.-]+$/.test(tool.repository) ||
+    tool.repository.split("/").some((part) => part === "." || part === "..")
+  )
+    throw new Error(`Invalid tool identity: ${tool.name}`);
 }
 
-export const diana: ToolDefinition = {
-  name: "diana",
-  description: "APK / DEX decompilation and static analysis",
-  repository: "TsingShui/Diana",
-  verifyArgs: ["--version"],
-  acceptRelease: (release) => /^diana-v\d/.test(release.tag),
-  selectAssets(release, platform) {
-    const arch = architecture(platform);
-    const windows = platform.os === "win32";
-    if (windows && arch !== "x86_64")
-      throw new Error("Diana supports Windows x64 only.");
-    const os = windows
-      ? "pc-windows-msvc"
-      : platform.os === "linux"
-        ? "unknown-linux-musl"
-        : platform.os === "darwin"
-          ? "apple-darwin"
-          : undefined;
-    if (!os)
-      throw new Error(`Unsupported operating system for Diana: ${platform.os}`);
-    const target = `${arch}-${os}`;
-    const format = windows ? "zip" : "tar.gz";
-    const version = release.tag.replace(/^diana-v/, "");
-    return archives(
-      [
-        `diana-${version}-${target}.${format}`,
-        `diana-v${version}-${target}.${format}`,
-        `diana-${target}.${format}`,
-      ],
-      () => (windows ? "diana.exe" : "diana"),
-      format,
+export function validateBinaryPath(entry: string): string {
+  if (
+    !entry ||
+    entry.startsWith("/") ||
+    entry.startsWith("-") ||
+    /[\\:\x00\r\n*?\[\]{}!]/.test(entry) ||
+    entry
+      .replace(/^\.\//, "")
+      .split("/")
+      .some((part) => !part || part === ".." || part === ".")
+  )
+    throw new Error(
+      "Archives require a safe, exact binaryPath without wildcards.",
     );
-  },
-};
-
-export const kuna: ToolDefinition = {
-  name: "kuna",
-  description: "Native binary decompilation",
-  repository: "Noelo-Lab/kuna",
-  verifyArgs: ["--version"],
-  selectAssets(release, platform) {
-    const arch = architecture(platform) === "aarch64" ? "arm64" : "x86_64";
-    const windows = platform.os === "win32";
-    if (windows && arch !== "x86_64")
-      throw new Error("Kuna supports Windows x64 only.");
-    const targets = windows
-      ? ["windows-x86_64"]
-      : platform.os === "linux"
-        ? arch === "x86_64"
-          ? ["linux-x86_64-musl", "linux-x86_64"]
-          : ["linux-arm64"]
-        : platform.os === "darwin"
-          ? [`macos-${arch}`]
-          : [];
-    if (!targets.length)
-      throw new Error(`Unsupported operating system for Kuna: ${platform.os}`);
-    const format = windows ? "zip" : "tar.gz";
-    return archives(
-      targets.map((target) => `kuna-${release.tag}-${target}.${format}`),
-      (name) =>
-        `${name.slice(0, -(format.length + 1))}/${windows ? "kuna.exe" : "kuna"}`,
-      format,
-    );
-  },
-};
-
-export const tools: ToolDefinition[] = [diana, kuna];
+  return entry;
+}

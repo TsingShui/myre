@@ -5,53 +5,55 @@ Install, update, and uninstall tools from public GitHub Releases without an API 
 
 ## Quick Start
 
-Requires Node.js 22+:
+Download the archive for your platform from [GitHub Releases](https://github.com/TsingShui/myre/releases/latest),
+extract `myre` (`myre.exe` on Windows), and place it on PATH. No Bun or Node.js is required to run it.
 
 ```bash
-npx myre@latest list
-npx myre@latest install
-npx myre@latest update diana
+myre list --refresh
+myre install
+myre update diana
+myre uninstall diana
 ```
 
-`install` installs all tools; `install -all` and `install --all` are explicit aliases.
-Tools are installed sequentially, stopping on the first failure. Already installed tools are not upgraded.
+`install` installs all tools supported on this platform; `install -all` and `install --all` are aliases.
+Tools are installed sequentially, stopping on the first failure. Existing versions are not upgraded.
 Use `install <tool>` for one tool, or `install <tool> --version <tag>` for a specific release.
-Use `update <tool> --yes` for non-interactive updates.
-
-`uninstall <tool>` removes that tool's managed versions and command link without network access.
-A tool name is required for uninstalling.
+Use `update <tool> --yes` for non-interactive updates. Uninstall requires a tool name.
 
 ## Tools
 
-- [Diana](https://github.com/TsingShui/Diana)
-- [Kuna](https://github.com/Noelo-Lab/kuna)
+The bundled catalog includes [Diana](https://github.com/TsingShui/Diana) and [Kuna](https://github.com/Noelo-Lab/kuna).
+Supported distributions: Linux (glibc, x64 / arm64), macOS (arm64), Windows (x64).
 
-Supported platforms: Linux (glibc, x64 / arm64), macOS (arm64), Windows (x64).
+## Dynamic Catalog
+
+`install` and `update` refresh the [remote tool catalog](https://github.com/TsingShui/myre/releases/download/catalog-v1/tools.json).
+Network or validation failures retain the last valid cached or bundled catalog and print a warning.
+`list` and `uninstall` stay offline; use `list --refresh` to explicitly refresh the list.
+Removed catalog entries remain available for listing and uninstalling through local installation records.
+
+Maintain [catalog/tools.json](catalog/tools.json) and increase `revision` when its contents change.
+Pushing to `main` publishes the table independently through the catalog workflow, without rebuilding the CLI.
+See [catalog format](catalog/README.md). The `catalog-v1` Release must stay mutable and is never marked Latest.
 
 ## Installation Paths
 
 - Tools: `~/.myre/tools/`
+- Catalog cache: `~/.myre/catalog.json`
 - Command symlinks: `~/.local/bin/` — add this directory to PATH.
 - Overrides: `MYRE_HOME` and `MYRE_BIN_DIR`.
 
-Installing tools needs no system `tar` or `unzip`. Existing unrelated commands are never modified.
+Installing tools needs no system `tar` or `unzip`. Unrelated commands are never modified.
 Windows requires Developer Mode or symbolic-link privileges.
 
-## Releases
+## Development and Releases
 
-Tag releases build four native targets and five npm packages. Manual workflow runs never publish.
-See [npm publishing](docs/npm-publishing.md) for first-publish setup and opt-in CI publishing.
-
-## Development
-
-Requires Bun and Node.js 22+ with npm.
+Requires Bun. Verification uses type checking and builds only; unit tests and smoke checks are prohibited.
 
 ```bash
 bun install
-bun test
 bun run typecheck
 bun run build
-./dist/myre list
 ```
 
-Add tool definitions in `src/tools.ts`.
+Version tags build and publish four native archives with `SHA256SUMS`. Manual Release workflow runs do not publish.

@@ -18,7 +18,14 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { unzipSync } from "fflate";
 import { GitHub, type Fetcher, type Release } from "./releases";
-import type { AssetSelection, Platform, ToolDefinition } from "./tools";
+import {
+  validateBinaryPath,
+  validateIdentity,
+  type AssetSelection,
+  type Platform,
+  type ToolDefinition,
+  type ToolIdentity,
+} from "./tools";
 
 interface Receipt {
   schema: 1;
@@ -28,6 +35,7 @@ interface Receipt {
   tag: string;
   asset?: string;
   installedAt: string;
+  description?: string;
 }
 
 interface Installation {
@@ -67,21 +75,7 @@ function message(error: unknown): string {
 }
 
 function validateEntry(selection: AssetSelection): string {
-  const entry = selection.binaryPath;
-  if (
-    !entry ||
-    entry.startsWith("/") ||
-    entry.startsWith("-") ||
-    /[\\\x00\r\n*?\[\]{}!]/.test(entry) ||
-    entry
-      .replace(/^\.\//, "")
-      .split("/")
-      .some((part) => !part || part === ".." || part === ".")
-  )
-    throw new Error(
-      "Archives require a safe, exact binaryPath without wildcards.",
-    );
-  return entry;
+  return validateBinaryPath(selection.binaryPath ?? "");
 }
 
 async function extract(
@@ -130,20 +124,8 @@ export class ToolManager {
     };
     const commands = new Set<string>();
     for (const tool of definitions) {
+      validateIdentity(tool);
       const command = this.command(tool);
-      if (
-        !/^[a-z0-9][a-z0-9_-]*$/.test(tool.name) ||
-        !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(command) ||
-        command.toLowerCase() === "receipt.json"
-      ) {
-        throw new Error(`Invalid tool name or command: ${tool.name}`);
-      }
-      if (
-        !/^[\w.-]+\/[\w.-]+$/.test(tool.repository) ||
-        tool.repository.split("/").some((part) => part === "." || part === "..")
-      ) {
-        throw new Error(`Invalid GitHub repository: ${tool.repository}`);
-      }
       const commandKey = this.windows ? command.toLowerCase() : command;
       if (this.definitions.has(tool.name) || commands.has(commandKey))
         throw new Error(`Duplicate tool name or command: ${tool.name}`);
@@ -172,7 +154,7 @@ export class ToolManager {
     return tool;
   }
 
-  private root(tool: ToolDefinition): string {
+  private root(tool: Pick<ToolIdentity, "name">): string {
     return join(this.dataDir, "tools", tool.name);
   }
 
@@ -180,22 +162,22 @@ export class ToolManager {
     return this.platform.os === "win32";
   }
 
-  private command(tool: ToolDefinition): string {
+  private command(tool: ToolIdentity): string {
     const name = tool.command ?? tool.name;
     return this.windows && !name.toLowerCase().endsWith(".exe")
       ? `${name}.exe`
       : name;
   }
 
-  private bin(tool: ToolDefinition): string {
+  private bin(tool: ToolIdentity): string {
     return join(this.binDir, this.command(tool));
   }
 
-  private current(tool: ToolDefinition): string {
+  private current(tool: Pick<ToolIdentity, "name">): string {
     return join(this.root(tool), this.windows ? "current.exe" : "current");
   }
 
-  private activeExecutable(tool: ToolDefinition): string {
+  private activeExecutable(tool: ToolIdentity): string {
     return this.windows
       ? this.current(tool)
       : join(this.current(tool), this.command(tool));
@@ -230,7 +212,7 @@ export class ToolManager {
   }
 
   private async installation(
-    tool: ToolDefinition,
+    tool: Pick<ToolIdentity, "name">,
   ): Promise<Installation | null> {
     const root = this.root(tool);
     const current = this.current(tool);
@@ -243,21 +225,20 @@ export class ToolManager {
     if (
       !this.samePath(dirname(directory), join(root, "versions")) ||
       !(await inspect(directory))?.isDirectory() ||
-      (this.windows &&
-        !this.samePath(target, join(directory, this.command(tool))))
+      !(await inspect(join(root, "versions")))?.isDirectory()
     ) {
       throw new Error(`Invalid installation directory: ${current}`);
     }
-    return {
-      receipt: await this.receipt(tool, directory),
-      executable: join(directory, this.command(tool)),
-    };
+    const receipt = await this.receipt(tool.name, directory);
+    if (
+      this.windows &&
+      !this.samePath(target, join(directory, receipt.command))
+    )
+      throw new Error(`Invalid executable link: ${current}`);
+    return { receipt, executable: join(directory, receipt.command) };
   }
 
-  private async receipt(
-    tool: ToolDefinition,
-    directory: string,
-  ): Promise<Receipt> {
+  private async receipt(name: string, directory: string): Promise<Receipt> {
     let value: unknown;
     try {
       value = JSON.parse(
@@ -272,21 +253,44 @@ export class ToolManager {
     if (
       !receipt ||
       receipt.schema !== 1 ||
-      receipt.tool !== tool.name ||
-      receipt.command !== this.command(tool) ||
-      receipt.repository !== tool.repository ||
+      receipt.tool !== name ||
+      typeof receipt.command !== "string" ||
+      typeof receipt.repository !== "string" ||
       typeof receipt.tag !== "string" ||
       !receipt.tag ||
-      typeof receipt.installedAt !== "string"
+      typeof receipt.installedAt !== "string" ||
+      (receipt.description !== undefined &&
+        typeof receipt.description !== "string")
     )
-      throw new Error(
-        `Invalid installation record or changed tool definition: ${tool.name}`,
-      );
+      throw new Error(`Invalid installation record: ${name}`);
+    validateIdentity({
+      name,
+      command: receipt.command,
+      repository: receipt.repository,
+    });
     return receipt as Receipt;
   }
 
+  private assertOwnership(tool: ToolIdentity, receipt: Receipt): void {
+    if (
+      receipt.command !== this.command(tool) ||
+      receipt.repository !== tool.repository
+    )
+      throw new Error(
+        `Catalog ownership changed for ${tool.name}; uninstall the existing installation before installing its new definition.`,
+      );
+  }
+
+  private identity(receipt: Receipt): ToolIdentity {
+    return {
+      name: receipt.tool,
+      repository: receipt.repository,
+      command: receipt.command,
+    };
+  }
+
   /** Returns false for a missing link; refuses to modify any unrelated file. */
-  private async ownsBin(tool: ToolDefinition): Promise<boolean> {
+  private async ownsBin(tool: ToolIdentity): Promise<boolean> {
     const path = this.bin(tool);
     const info = await inspect(path);
     if (!info) return false;
@@ -300,7 +304,7 @@ export class ToolManager {
     return true;
   }
 
-  private async ensureBin(tool: ToolDefinition): Promise<boolean> {
+  private async ensureBin(tool: ToolIdentity): Promise<boolean> {
     if (await this.ownsBin(tool)) return false;
     await mkdir(this.binDir, { recursive: true });
     await this.createLink(this.activeExecutable(tool), this.bin(tool), "file");
@@ -308,16 +312,27 @@ export class ToolManager {
   }
 
   async list(): Promise<ToolRow[]> {
+    const names = new Set(this.definitions.keys());
+    try {
+      for (const name of await readdir(join(this.dataDir, "tools")))
+        if (/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) names.add(name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     const rows: ToolRow[] = [];
-    for (const tool of this.definitions.values()) {
+    for (const name of names) {
+      const definition = this.definitions.get(name);
       const row: ToolRow = {
-        name: tool.name,
-        description: tool.description,
+        name,
+        description:
+          definition?.description ?? "Installed tool absent from the catalog",
         status: "not-installed",
       };
       try {
-        const installation = await this.installation(tool);
+        const installation = await this.installation({ name });
         if (installation) {
+          const tool = this.identity(installation.receipt);
+          row.description = installation.receipt.description ?? row.description;
           row.version = installation.receipt.tag;
           row.path = this.bin(tool);
           row.status =
@@ -328,7 +343,14 @@ export class ToolManager {
           if (row.status === "broken")
             row.error =
               "Executable or command link is missing; run install to repair it.";
-        }
+          if (
+            definition &&
+            (definition.repository !== tool.repository ||
+              this.command(definition) !== this.command(tool))
+          )
+            row.error =
+              "Catalog ownership changed; uninstall before installing the new definition.";
+        } else if (!definition) continue;
       } catch (error) {
         row.status = "broken";
         row.error = message(error);
@@ -339,12 +361,15 @@ export class ToolManager {
   }
 
   private async locked<T>(
-    tool: ToolDefinition,
+    tool: Pick<ToolIdentity, "name">,
     action: () => Promise<T>,
   ): Promise<T> {
     if (!["linux", "darwin", "win32"].includes(this.platform.os))
       throw new Error("Installation supports Linux, macOS, and Windows.");
     const root = this.root(tool);
+    const info = await inspect(root);
+    if (info && !info.isDirectory())
+      throw new Error(`Not a myre-managed tool directory: ${root}`);
     await mkdir(root, { recursive: true });
     const path = join(root, ".lock");
     let lock;
@@ -373,6 +398,7 @@ export class ToolManager {
     const tool = this.tool(name);
     await this.locked(tool, async () => {
       const installed = await this.installation(tool);
+      if (installed) this.assertOwnership(tool, installed.receipt);
       await this.ownsBin(tool);
       if (installed) {
         if (options.version && options.version !== installed.receipt.tag) {
@@ -399,13 +425,17 @@ export class ToolManager {
   }
 
   async uninstall(name: string): Promise<void> {
-    const tool = this.tool(name);
-    await this.locked(tool, async () => {
-      const installed = await this.installation(tool);
-      const ownsBin = await this.ownsBin(tool);
-      const versions = join(this.root(tool), "versions");
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name))
+      throw new Error(`Invalid tool name: ${name}`);
+    const hint = { name };
+    if (!this.definitions.has(name) && !(await inspect(this.root(hint))))
+      this.tool(name);
+    await this.locked(hint, async () => {
+      const installed = await this.installation(hint);
+      const versions = join(this.root(hint), "versions");
       const info = await inspect(versions);
       const directories: string[] = [];
+      const receipts: Receipt[] = [];
       if (info) {
         if (!info.isDirectory())
           throw new Error(`Not a myre-managed versions directory: ${versions}`);
@@ -415,10 +445,18 @@ export class ToolManager {
             throw new Error(
               `Not a myre-managed version directory: ${directory}`,
             );
-          await this.receipt(tool, directory);
+          receipts.push(await this.receipt(name, directory));
           directories.push(directory);
         }
       }
+      const stored = installed?.receipt ?? receipts[0];
+      const tool = stored ? this.identity(stored) : this.definitions.get(name);
+      if (!tool) {
+        this.log(`${name} is not installed.`);
+        return;
+      }
+      for (const receipt of receipts) this.assertOwnership(tool, receipt);
+      const ownsBin = await this.ownsBin(tool);
       // Validate every version before deleting any links or installation files.
       if (ownsBin) await rm(this.bin(tool));
       if (installed) await rm(this.current(tool));
@@ -442,6 +480,7 @@ export class ToolManager {
         throw new Error(
           `${name} is not installed; run myre install ${name} first.`,
         );
+      this.assertOwnership(tool, installed.receipt);
       await this.ownsBin(tool);
       const release = await this.github.release(
         tool.repository,
@@ -567,6 +606,7 @@ export class ToolManager {
         tag: release.tag,
         asset: selection.name,
         installedAt: new Date().toISOString(),
+        description: tool.description,
       };
       await Bun.write(
         join(staging, "receipt.json"),

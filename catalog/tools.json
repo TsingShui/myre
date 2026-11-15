@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "tools": [
+    {
+      "name": "diana",
+      "description": "APK / DEX decompilation and static analysis",
+      "repository": "TsingShui/Diana",
+      "tagPrefix": "diana-v",
+      "numericVersion": true,
+      "verifyArgs": ["--version"],
+      "platforms": {
+        "linux-x64": {
+          "format": "tar.gz",
+          "binaryPath": "diana",
+          "assets": [
+            {
+              "name": "diana-{version}-x86_64-unknown-linux-musl.tar.gz"
+            },
+            {
+              "name": "diana-v{version}-x86_64-unknown-linux-musl.tar.gz"
+            },
+            {
+              "name": "diana-x86_64-unknown-linux-musl.tar.gz"
+            }
+          ]
+        },
+        "linux-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "diana",
+          "assets": [
+            {
+              "name": "diana-{version}-aarch64-unknown-linux-musl.tar.gz"
+            },
+            {
+              "name": "diana-v{version}-aarch64-unknown-linux-musl.tar.gz"
+            },
+            {
+              "name": "diana-aarch64-unknown-linux-musl.tar.gz"
+            }
+          ]
+        },
+        "macos-x64": {
+          "format": "tar.gz",
+          "binaryPath": "diana",
+          "assets": [
+            {
+              "name": "diana-{version}-x86_64-apple-darwin.tar.gz"
+            },
+            {
+              "name": "diana-v{version}-x86_64-apple-darwin.tar.gz"
+            },
+            {
+              "name": "diana-x86_64-apple-darwin.tar.gz"
+            }
+          ]
+        },
+        "macos-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "diana",
+          "assets": [
+            {
+              "name": "diana-{version}-aarch64-apple-darwin.tar.gz"
+            },
+            {
+              "name": "diana-v{version}-aarch64-apple-darwin.tar.gz"
+            },
+            {
+              "name": "diana-aarch64-apple-darwin.tar.gz"
+            }
+          ]
+        },
+        "windows-x64": {
+          "format": "zip",
+          "binaryPath": "diana.exe",
+          "assets": [
+            {
+              "name": "diana-{version}-x86_64-pc-windows-msvc.zip"
+            },
+            {
+              "name": "diana-v{version}-x86_64-pc-windows-msvc.zip"
+            },
+            {
+              "name": "diana-x86_64-pc-windows-msvc.zip"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "kuna",
+      "description": "Native binary decompilation",
+      "repository": "Noelo-Lab/kuna",
+      "verifyArgs": ["--version"],
+      "platforms": {
+        "linux-x64": {
+          "format": "tar.gz",
+          "binaryPath": "{assetStem}/kuna",
+          "assets": [
+            {
+              "name": "kuna-{tag}-linux-x86_64-musl.tar.gz"
+            },
+            {
+              "name": "kuna-{tag}-linux-x86_64.tar.gz"
+            }
+          ]
+        },
+        "linux-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "{assetStem}/kuna",
+          "assets": [
+            {
+              "name": "kuna-{tag}-linux-arm64.tar.gz"
+            }
+          ]
+        },
+        "macos-x64": {
+          "format": "tar.gz",
+          "binaryPath": "{assetStem}/kuna",
+          "assets": [
+            {
+              "name": "kuna-{tag}-macos-x86_64.tar.gz"
+            }
+          ]
+        },
+        "macos-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "{assetStem}/kuna",
+          "assets": [
+            {
+              "name": "kuna-{tag}-macos-arm64.tar.gz"
+            }
+          ]
+        },
+        "windows-x64": {
+          "format": "zip",
+          "binaryPath": "{assetStem}/kuna.exe",
+          "assets": [
+            {
+              "name": "kuna-{tag}-windows-x86_64.zip"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
