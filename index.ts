@@ -9,16 +9,7 @@ Usage:
   myre install [<tool> | --all | -all]
   myre install <tool> --version <tag>
   myre update <tool> [--yes]
-  myre uninstall <tool>
-
-list reads local state without network access; --refresh fetches the tool catalog.
-install and update refresh the remote tool catalog, with a cached or bundled fallback.
-install defaults to all tools supported on this platform; --version requires a single tool.
-Existing installations are not upgraded by install.
-update compares tags and shows release/compare links before confirmation.
-uninstall removes managed versions and command links without network access.
-Non-interactive updates require --yes. No GitHub API or token is used.
-`;
+  myre uninstall <tool>`;
 
 type Command =
   | { name: "help" }

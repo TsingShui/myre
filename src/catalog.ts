@@ -314,6 +314,7 @@ export async function loadTools(refresh = false): Promise<ToolDefinition[]> {
       ? cached
       : bundledCatalog;
   if (refresh) {
+    console.error("Refreshing catalog...");
     try {
       selected = newest(await download(), selected);
     } catch (error) {
@@ -350,6 +351,7 @@ export async function loadTools(refresh = false): Promise<ToolDefinition[]> {
         await rm(lockPath, { force: true });
       }
     }
+    console.error(`Catalog ready (revision ${selected.revision}).`);
   }
   return definitions(selected);
 }
