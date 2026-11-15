@@ -132,14 +132,18 @@ export async function buildPackages(
     );
     if (result.status !== 0)
       throw new Error(`npm pack failed: ${result.stderr || result.stdout}`);
-    const details = JSON.parse(result.stdout)[0];
+    const response = JSON.parse(result.stdout);
+    // npm 12 keys results by package name; older versions return an array.
+    const details = Array.isArray(response) ? response[0] : response?.[name];
     const file = `${name}-${version}.tgz`;
     if (
       details?.name !== name ||
       details?.version !== version ||
       details?.filename !== file
     ) {
-      throw new Error("npm pack returned unexpected package metadata.");
+      throw new Error(
+        `npm pack returned unexpected package metadata: ${result.stdout}`,
+      );
     }
     packages.push({
       name,
@@ -290,7 +294,12 @@ async function publish(directory: string): Promise<void> {
       root,
     );
     if (existing.status === 0) {
-      if (JSON.parse(existing.stdout) !== pkg.integrity)
+      const response = JSON.parse(existing.stdout);
+      const published =
+        Array.isArray(response) && response.length === 1
+          ? response[0]
+          : response;
+      if (published !== pkg.integrity)
         throw new Error(
           `Refusing to replace different published contents: ${pkg.name}@${manifest.version}.`,
         );
