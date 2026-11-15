@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { mkdtemp, readdir, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readlink, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,8 +209,9 @@ test("install downloads a public archive with a 404 fallback and remains idempot
   expect(f.upstream.requests).toHaveLength(count);
 }, 60_000);
 
-test("update installs a ZIP, shows review links, and skips unchanged tags", async () => {
-  const f = await fixture();
+test("update supports cancellation, installs a ZIP, and skips unchanged tags", async () => {
+  let confirmed = false;
+  const f = await fixture({ confirm: async () => confirmed });
   await f.manager.install("fixture");
   const previous = await f.currentDirectory();
   f.upstream.add(
@@ -227,6 +228,12 @@ test("update installs a ZIP, shows review links, and skips unchanged tags", asyn
     { name: "fixture", format: "zip", binaryPath: `bin/${binaryName}` },
   ];
 
+  await f.manager.update("fixture");
+  expect(f.upstream.downloadCount).toBe(1);
+  expect(await output(f.binary)).toBe("v1");
+  expect(f.logs.at(-1)).toBe("Update cancelled.");
+
+  confirmed = true;
   await f.manager.update("fixture");
   expect(await output(f.binary)).toBe("v2");
   expect((await readdir(await f.currentDirectory())).sort()).toEqual([
@@ -247,15 +254,59 @@ test("update installs a ZIP, shows review links, and skips unchanged tags", asyn
   expect(f.upstream.downloadCount).toBe(2);
 }, 60_000);
 
-test("cancelled update does not download or replace the current version", async () => {
-  const f = await fixture({ confirm: async () => false });
+test("uninstall validates ownership, removes all managed versions offline, and respects locks", async () => {
+  const f = await fixture();
   await f.manager.install("fixture");
+  const previous = await f.currentDirectory();
   f.upstream.add("v2");
-  await f.manager.update("fixture");
-  expect(f.upstream.downloadCount).toBe(1);
-  expect(await output(f.binary)).toBe("v1");
-  expect(f.logs.at(-1)).toBe("Update cancelled.");
-});
+  await f.manager.update("fixture", { yes: true });
+  const active = await f.currentDirectory();
+  const requests = f.upstream.requests.length;
+
+  const lock = join(f.root, ".lock");
+  await Bun.write(lock, "another operation");
+  await expect(f.manager.uninstall("fixture")).rejects.toThrow(
+    "Another operation",
+  );
+  expect(await output(f.binary)).toBe("v2");
+  await rm(lock);
+
+  const outside = join(f.directory, "unrelated");
+  const protectedFile = join(outside, "keep.txt");
+  await Bun.write(protectedFile, "do not remove");
+  const foreign = join(f.root, "versions", "unrelated");
+  await symlink(outside, foreign, "dir");
+  await expect(f.manager.uninstall("fixture")).rejects.toThrow(
+    "Not a myre-managed version directory",
+  );
+  expect(await Bun.file(protectedFile).text()).toBe("do not remove");
+  await rm(foreign);
+
+  await Bun.write(join(foreign, "keep.txt"), "unmanaged version");
+  await expect(f.manager.uninstall("fixture")).rejects.toThrow(
+    "Cannot read installation record",
+  );
+  expect(await Bun.file(join(foreign, "keep.txt")).text()).toBe(
+    "unmanaged version",
+  );
+  expect(await output(f.binary)).toBe("v2");
+  await rm(foreign, { recursive: true });
+
+  // A missing executable must not prevent removal of its valid installation record.
+  await rm(join(active, binaryName));
+  await f.manager.uninstall("fixture");
+  expect((await f.manager.list())[0]?.status).toBe("not-installed");
+  expect(await readdir(f.root)).toEqual([]);
+  await expect(readlink(f.binary)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await Bun.file(join(previous, "receipt.json")).exists()).toBe(false);
+  expect(await Bun.file(join(active, "receipt.json")).exists()).toBe(false);
+  expect(await Bun.file(protectedFile).text()).toBe("do not remove");
+  expect(f.logs.at(-1)).toBe("fixture uninstalled.");
+
+  await f.manager.uninstall("fixture");
+  expect(f.logs.at(-1)).toBe("fixture is not installed.");
+  expect(f.upstream.requests).toHaveLength(requests);
+}, 60_000);
 
 test("download size mismatch preserves the current version and cleans temporary files", async () => {
   const f = await fixture();
@@ -282,12 +333,28 @@ test("failed executable verification preserves the previous installation", async
   expect((await f.manager.list())[0]?.version).toBe("v1");
 });
 
-test("install refuses to overwrite an unmanaged command", async () => {
+test("install and uninstall refuse to modify an unmanaged command", async () => {
   const f = await fixture();
   await Bun.write(f.binary, "do not overwrite");
   await expect(f.manager.install("fixture")).rejects.toThrow(
-    "Refusing to overwrite",
+    "not owned by myre",
+  );
+  await expect(f.manager.uninstall("fixture")).rejects.toThrow(
+    "not owned by myre",
   );
   expect(await Bun.file(f.binary).text()).toBe("do not overwrite");
   expect(f.upstream.requests).toHaveLength(0);
+
+  await rm(f.binary);
+  await f.manager.install("fixture");
+  const requests = f.upstream.requests.length;
+  await rm(f.binary);
+  await Bun.write(f.binary, "replacement command");
+  await expect(f.manager.uninstall("fixture")).rejects.toThrow(
+    "not owned by myre",
+  );
+  expect(await Bun.file(f.binary).text()).toBe("replacement command");
+  expect((await f.manager.list())[0]?.version).toBe("v1");
+  expect(await readdir(f.root)).not.toContain(".lock");
+  expect(f.upstream.requests).toHaveLength(requests);
 });

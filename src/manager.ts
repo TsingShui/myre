@@ -6,9 +6,11 @@ import {
   mkdtemp,
   open,
   readFile,
+  readdir,
   readlink,
   rename,
   rm,
+  rmdir,
   stat,
   symlink,
 } from "node:fs/promises";
@@ -246,6 +248,16 @@ export class ToolManager {
     ) {
       throw new Error(`Invalid installation directory: ${current}`);
     }
+    return {
+      receipt: await this.receipt(tool, directory),
+      executable: join(directory, this.command(tool)),
+    };
+  }
+
+  private async receipt(
+    tool: ToolDefinition,
+    directory: string,
+  ): Promise<Receipt> {
     let value: unknown;
     try {
       value = JSON.parse(
@@ -270,13 +282,10 @@ export class ToolManager {
       throw new Error(
         `Invalid installation record or changed tool definition: ${tool.name}`,
       );
-    return {
-      receipt: receipt as Receipt,
-      executable: join(directory, this.command(tool)),
-    };
+    return receipt as Receipt;
   }
 
-  /** Returns false for a missing link; refuses to overwrite any unrelated file. */
+  /** Returns false for a missing link; refuses to modify any unrelated file. */
   private async ownsBin(tool: ToolDefinition): Promise<boolean> {
     const path = this.bin(tool);
     const info = await inspect(path);
@@ -286,9 +295,7 @@ export class ToolManager {
       !info.isSymbolicLink() ||
       !this.samePath(resolve(dirname(path), await readlink(path)), target)
     ) {
-      throw new Error(
-        `Refusing to overwrite a file not owned by myre: ${path}`,
-      );
+      throw new Error(`Refusing to modify a file not owned by myre: ${path}`);
     }
     return true;
   }
@@ -388,6 +395,42 @@ export class ToolManager {
         tool.acceptRelease,
       );
       await this.activate(tool, release);
+    });
+  }
+
+  async uninstall(name: string): Promise<void> {
+    const tool = this.tool(name);
+    await this.locked(tool, async () => {
+      const installed = await this.installation(tool);
+      const ownsBin = await this.ownsBin(tool);
+      const versions = join(this.root(tool), "versions");
+      const info = await inspect(versions);
+      const directories: string[] = [];
+      if (info) {
+        if (!info.isDirectory())
+          throw new Error(`Not a myre-managed versions directory: ${versions}`);
+        for (const entry of await readdir(versions)) {
+          const directory = join(versions, entry);
+          if (!(await inspect(directory))?.isDirectory())
+            throw new Error(
+              `Not a myre-managed version directory: ${directory}`,
+            );
+          await this.receipt(tool, directory);
+          directories.push(directory);
+        }
+      }
+      // Validate every version before deleting any links or installation files.
+      if (ownsBin) await rm(this.bin(tool));
+      if (installed) await rm(this.current(tool));
+      for (const directory of directories)
+        await rm(directory, { recursive: true });
+      if (info) await rmdir(versions);
+      // Keep the root stable for per-tool locking, including concurrent installs.
+      this.log(
+        installed || ownsBin || directories.length
+          ? `${name} uninstalled.`
+          : `${name} is not installed.`,
+      );
     });
   }
 

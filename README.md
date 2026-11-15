@@ -1,20 +1,25 @@
 # myre
 
 A lightweight reverse-engineering CLI tool manager built with TypeScript and Bun.
-Install and update tools from public GitHub Releases without an API token.
+Install, update, and uninstall tools from public GitHub Releases without an API token.
 
 ## Quick Start
 
-Once published to npm, use Node.js 22+:
+Requires Node.js 22+:
 
 ```bash
 npx myre@latest list
-npx myre@latest install diana
-npx myre@latest install kuna
+npx myre@latest install
 npx myre@latest update diana
 ```
 
-Use `install <tool> --version <tag>` for a specific release and `update <tool> --yes` for non-interactive updates.
+`install` installs all tools; `install -all` and `install --all` are explicit aliases.
+Tools are installed sequentially, stopping on the first failure. Already installed tools are not upgraded.
+Use `install <tool>` for one tool, or `install <tool> --version <tag>` for a specific release.
+Use `update <tool> --yes` for non-interactive updates.
+
+`uninstall <tool>` removes that tool's managed versions and command link without network access.
+A tool name is required for uninstalling.
 
 ## Tools
 
@@ -29,7 +34,7 @@ Supported platforms: Linux (glibc, x64 / arm64), macOS (arm64), Windows (x64).
 - Command symlinks: `~/.local/bin/` — add this directory to PATH.
 - Overrides: `MYRE_HOME` and `MYRE_BIN_DIR`.
 
-Installing tools needs no system `tar` or `unzip`. Existing unrelated commands are never overwritten.
+Installing tools needs no system `tar` or `unzip`. Existing unrelated commands are never modified.
 Windows requires Developer Mode or symbolic-link privileges.
 
 ## Releases
