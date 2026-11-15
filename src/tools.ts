@@ -23,8 +23,24 @@ export interface ToolIdentity {
 
 export type VersionPolicy = { mode: "latest" } | { mode: "fixed"; tag: string };
 
+/** Cross-platform managers first: the order is the fallback priority. */
+export const packageManagers = ["cargo", "brew"] as const;
+export type PackageManager = (typeof packageManagers)[number];
+
+/** Printed for the user to run; myre never runs another package manager. */
+export function externalCommand(
+  manager: PackageManager,
+  packageName: string,
+): string {
+  return `${manager} install ${packageName}`;
+}
+
 export interface ToolDefinition extends ToolIdentity {
   description: string;
+  /** Documentation entry point; defaults to `<command> --help`. */
+  learn?: string;
+  /** Package managers that provide this tool outside the catalog. */
+  fallback?: Record<string, string>;
   version?: VersionPolicy;
   supports?(platform: Platform): boolean;
   acceptRelease?(release: Release): boolean;
@@ -55,6 +71,38 @@ export function validateIdentity(tool: ToolIdentity): void {
     tool.repository.split("/").some((part) => part === "." || part === "..")
   )
     throw new Error(`Invalid tool identity: ${tool.name}`);
+}
+
+/** Closed manager set with validated package names; never a command string. */
+export function validateFallback(tool: {
+  name: string;
+  fallback?: Record<string, string>;
+}): void {
+  const fallback = tool.fallback;
+  if (fallback === undefined) return;
+  const entries = Object.entries(fallback);
+  if (!entries.length || entries.length > packageManagers.length)
+    throw new Error(`Invalid catalog fallback: ${tool.name}`);
+  for (const [manager, packageName] of entries)
+    if (
+      !packageManagers.includes(manager as PackageManager) ||
+      !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(packageName)
+    )
+      throw new Error(`Invalid catalog fallback: ${tool.name}`);
+}
+
+/** Inert documentation command: the tool's own executable plus plain arguments. */
+export function learnCommand(tool: ToolIdentity & { learn?: string }): string {
+  const command = tool.command ?? tool.name;
+  const learn = tool.learn ?? `${command} --help`;
+  const tokens = learn.split(" ");
+  if (
+    learn.length > 128 ||
+    tokens[0] !== command ||
+    tokens.some((token) => !/^-{0,2}[a-zA-Z0-9][\w.\/=:@,+-]*$/.test(token))
+  )
+    throw new Error(`Invalid documentation command: ${tool.name}`);
+  return learn;
 }
 
 export function validateBinaryPath(entry: string): string {

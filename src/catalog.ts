@@ -8,8 +8,10 @@ import {
   validateReleaseTag,
 } from "./releases";
 import {
+  learnCommand,
   platformKey,
   validateBinaryPath,
+  validateFallback,
   validateIdentity,
   type AssetSelection,
   type ToolDefinition,
@@ -35,6 +37,8 @@ interface CatalogPlatform {
 interface CatalogTool {
   name: string;
   description: string;
+  learn?: string;
+  fallback?: Record<string, string>;
   repository: string;
   command?: string;
   source?: "github" | "nuget";
@@ -93,6 +97,12 @@ function parseVersion(value: unknown): VersionPolicy {
   }
   throw new Error("Invalid catalog version policy.");
 }
+function parseFallback(value: unknown): Record<string, string> {
+  const fallback: Record<string, string> = {};
+  for (const [manager, packageName] of Object.entries(object(value)))
+    fallback[manager] = string(packageName);
+  return fallback;
+}
 function render(template: string, values: Record<string, string>): string {
   const result = template.replace(/\{([^{}]+)\}/g, (_, key: string) => {
     if (!Object.hasOwn(values, key))
@@ -126,6 +136,8 @@ export function parseCatalog(value: unknown): Catalog {
     const raw = object(value, [
       "name",
       "description",
+      "learn",
+      "fallback",
       "repository",
       "command",
       "source",
@@ -138,6 +150,9 @@ export function parseCatalog(value: unknown): Catalog {
     const tool: CatalogTool = {
       name: string(raw.name),
       description: string(raw.description),
+      learn: raw.learn === undefined ? undefined : string(raw.learn),
+      fallback:
+        raw.fallback === undefined ? undefined : parseFallback(raw.fallback),
       repository: string(raw.repository),
       command: raw.command === undefined ? undefined : string(raw.command),
       source:
@@ -156,6 +171,8 @@ export function parseCatalog(value: unknown): Catalog {
       platforms: {},
     };
     validateIdentity(tool);
+    validateFallback(tool);
+    learnCommand(tool);
     if (tool.source === "nuget") {
       if (
         tool.version?.mode !== "fixed" ||

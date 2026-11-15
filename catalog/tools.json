@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 4,
+  "revision": 6,
   "tools": [
     {
       "name": "diana",
@@ -90,6 +90,7 @@
     {
       "name": "apkeep",
       "description": "Download an APK for analysis",
+      "fallback": { "cargo": "apkeep", "brew": "apkeep" },
       "repository": "EFForg/apkeep",
       "verifyArgs": ["--version"],
       "platforms": {
@@ -169,6 +170,7 @@
     {
       "name": "kuna",
       "description": "Analyze native binaries",
+      "learn": "kuna install-skill --print",
       "repository": "Noelo-Lab/kuna",
       "verifyArgs": ["--version"],
       "platforms": {

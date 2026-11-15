@@ -32,6 +32,7 @@
 ## Safety Invariants
 
 - Manage only myre-owned installations; never overwrite unrelated commands or modify shell configuration.
+- Never run another package manager. Detect external installations read-only through PATH, label them, and refuse to update or uninstall them.
 - Download, check integrity, and verify the executable before switching versions. Failures must preserve the existing installation.
 - Switch executables and installation records together, and preserve per-tool locking.
 - Check available Content-Length headers and configured expected SHA-256 digests. Read only the selected executable entry from archives.

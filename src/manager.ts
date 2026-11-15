@@ -8,6 +8,7 @@ import {
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rm,
   rmdir,
@@ -19,9 +20,12 @@ import { dirname, join, relative, resolve } from "node:path";
 import { unzipSync } from "fflate";
 import { GitHub, NuGet, type Fetcher, type Release } from "./releases";
 import {
+  externalCommand,
+  platformKey,
   validateBinaryPath,
   validateIdentity,
   type AssetSelection,
+  type PackageManager,
   type Platform,
   type ToolDefinition,
   type ToolIdentity,
@@ -47,10 +51,13 @@ interface Installation {
 export interface ToolRow {
   name: string;
   description: string;
-  status: "installed" | "not-installed" | "broken";
+  status: "installed" | "not-installed" | "broken" | "external";
   version?: string;
   path?: string;
+  /** Package manager that provides an external installation. */
+  manager?: PackageManager;
   error?: string;
+  hint?: string;
 }
 
 export interface ManagerOptions {
@@ -247,6 +254,55 @@ export class ToolManager {
       : resolve(left) === resolve(right);
   }
 
+  /** Read-only PATH lookup: myre never runs the manager it reports. */
+  private async external(
+    tool: ToolDefinition,
+  ): Promise<{ path: string; manager?: PackageManager } | undefined> {
+    const found = Bun.which(this.command(tool));
+    if (!found || this.samePath(dirname(found), this.binDir)) return;
+    const target = await realpath(found).catch(() => found);
+    const inferred: PackageManager | undefined =
+      /[\\/](Cellar|homebrew|linuxbrew)[\\/]/.test(target)
+        ? "brew"
+        : /[\\/]\.cargo[\\/]bin[\\/]/.test(target)
+          ? "cargo"
+          : undefined;
+    const declared = Object.keys(tool.fallback ?? {});
+    const manager =
+      inferred ??
+      (declared.length === 1 ? (declared[0] as PackageManager) : undefined);
+    return { path: found, manager };
+  }
+
+  /** Prefers the first declared manager that is installed here. */
+  private fallbackHint(tool: ToolDefinition): string | undefined {
+    const entries = Object.entries(tool.fallback ?? {});
+    const chosen =
+      entries.find(([manager]) => Bun.which(manager) !== null) ?? entries[0];
+    if (!chosen) return;
+    const [manager, packageName] = chosen as [PackageManager, string];
+    return `no ${platformKey(this.platform)} build in the catalog; install it with \`${externalCommand(manager, packageName)}\``;
+  }
+
+  private requirePlatform(tool: ToolDefinition): void {
+    if (tool.supports && !tool.supports(this.platform))
+      throw new Error(
+        this.fallbackHint(tool) ??
+          `Unsupported platform for ${tool.name}: ${platformKey(this.platform)}`,
+      );
+  }
+
+  /** Explains an unmanaged tool instead of claiming nothing is there. */
+  private async externalHint(name: string): Promise<string | undefined> {
+    const definition = this.definitions.get(name);
+    if (!definition) return;
+    const external = await this.external(definition);
+    if (external)
+      return `${name} is not managed by myre: provided by ${external.manager ?? "another package manager"} at ${external.path}`;
+    const hint = this.fallbackHint(definition);
+    if (hint) return `${name} is not installed; ${hint}`;
+  }
+
   private async executableExists(path: string): Promise<boolean> {
     const file = await inspect(path);
     return !!file?.isFile() && (this.windows || (file.mode & 0o111) !== 0);
@@ -427,7 +483,17 @@ export class ToolManager {
           if (ownershipChanged)
             row.error =
               "Catalog ownership changed; uninstall before installing the new definition.";
-        } else if (!definition) continue;
+        } else if (!definition) {
+          continue;
+        } else {
+          const external = await this.external(definition);
+          if (external) {
+            row.status = "external";
+            row.manager = external.manager;
+            row.path = external.path;
+          } else if (definition.supports && !definition.supports(this.platform))
+            row.hint = this.fallbackHint(definition);
+        }
       } catch (error) {
         row.status = "broken";
         row.error = message(error);
@@ -473,6 +539,7 @@ export class ToolManager {
     options: { version?: string } = {},
   ): Promise<void> {
     const tool = this.tool(name);
+    this.requirePlatform(tool);
     const fixed = tool.version?.mode === "fixed" ? tool.version.tag : undefined;
     if (fixed && options.version && options.version !== fixed)
       throw new Error(
@@ -550,10 +617,11 @@ export class ToolManager {
         await rm(directory, { recursive: true });
       if (info) await rmdir(versions);
       // Keep the root stable for per-tool locking, including concurrent installs.
+      const external = await this.externalHint(name);
       this.log(
         installed || ownsBin || directories.length
           ? `${name} uninstalled.`
-          : `${name} is not installed.`,
+          : (external ?? `${name} is not installed.`),
       );
     });
   }
@@ -562,10 +630,13 @@ export class ToolManager {
     const tool = this.tool(name);
     await this.locked(tool, async () => {
       const installed = await this.installation(tool);
-      if (!installed)
+      if (!installed) {
+        const external = await this.externalHint(name);
+        if (external) throw new Error(external);
         throw new Error(
           `${name} is not installed; run myre install ${name} first.`,
         );
+      }
       this.assertOwnership(tool, installed.receipt);
       this.assertPackageOwnership(tool, installed.receipt);
       await this.ownsBin(tool);

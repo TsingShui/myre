@@ -123,6 +123,7 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
           installed: "Installed",
           "not-installed": "Not installed",
           broken: "Broken",
+          external: "External",
         };
         const table = new Table({
           head: ["Tool", "Status", "Version", "Description"],
@@ -131,7 +132,9 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
         for (const row of rows) {
           table.push([
             row.name,
-            labels[row.status],
+            row.manager
+              ? `${labels[row.status]} (${row.manager})`
+              : labels[row.status],
             row.version ?? "-",
             row.description,
           ]);
@@ -139,6 +142,9 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
         console.log(table.toString());
         for (const row of rows) {
           if (row.error) console.log(`${row.name}: ${row.error}`);
+        }
+        for (const row of rows) {
+          if (row.hint) console.log(`${row.name}: ${row.hint}`);
         }
         break;
       }

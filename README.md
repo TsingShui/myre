@@ -48,6 +48,8 @@ Catalog refreshes sync the installed Skill's tool index without overwriting user
 
 `install` and `update` refresh the catalog with cached/bundled fallback. `list` and `uninstall` are offline by default.
 
+`list` reports a tool installed by another package manager as `External`, and `install` prints the matching `cargo`/`brew` command when the catalog has no build for this platform. myre never runs another package manager, never modifies what it did not install, and `update`/`uninstall` refuse external tools.
+
 Data: `~/.myre` (`MYRE_HOME`); commands: `~/.local/bin` (`MYRE_BIN_DIR`). Windows needs Developer Mode or symlink privileges.
 
 Maintain tools through the [catalog](catalog/README.md), independently of CLI releases.

@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import skillTemplate from "../SKILL.md" with { type: "text" };
 import type { LoadedCatalog } from "./catalog";
+import { learnCommand } from "./tools";
 
 const toolsStart = "<!-- myre:tools:start -->";
 const toolsEnd = "<!-- myre:tools:end -->";
@@ -31,7 +32,7 @@ function replaceTools(content: string, catalog: LoadedCatalog): string {
   const rows = catalog.tools.map((tool) => {
     const scope = tool.description.replace(/[\\`*_[\]<>|]/g, "\\$&");
     const command = tool.command ?? tool.name;
-    return `| ${scope} | \`${command}\` | \`${command} --help\` |`;
+    return `| ${scope} | \`${command}\` | \`${learnCommand(tool)}\` |`;
   });
   const table = rows.length
     ? [
