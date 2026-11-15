@@ -32,6 +32,7 @@ myre uninstall diana
 
 - [Diana](https://github.com/TsingShui/Diana) — Analyze APK/DEX code.
 - [Kuna](https://github.com/Noelo-Lab/kuna) — Analyze native binaries.
+- [ilspycmd](https://github.com/TsingShui/ILSpy/releases) — Analyze .NET assemblies (NativeAOT builds of [ILSpy](https://github.com/icsharpcode/ILSpy); macOS builds are not notarized).
 - [apkeep](https://github.com/EFForg/apkeep) — Download an APK for analysis (Linux/Windows).
 
 ## Agent Skill

@@ -2,7 +2,11 @@ import { mkdir, open, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import bundled from "../catalog/tools.json";
-import { validateReleaseTag } from "./releases";
+import {
+  validateNuGetPackage,
+  validateNuGetVersion,
+  validateReleaseTag,
+} from "./releases";
 import {
   platformKey,
   validateBinaryPath,
@@ -33,6 +37,7 @@ interface CatalogTool {
   description: string;
   repository: string;
   command?: string;
+  source?: "github" | "nuget";
   tagPrefix?: string;
   numericVersion?: boolean;
   version?: VersionPolicy;
@@ -123,6 +128,7 @@ export function parseCatalog(value: unknown): Catalog {
       "description",
       "repository",
       "command",
+      "source",
       "tagPrefix",
       "numericVersion",
       "version",
@@ -134,6 +140,10 @@ export function parseCatalog(value: unknown): Catalog {
       description: string(raw.description),
       repository: string(raw.repository),
       command: raw.command === undefined ? undefined : string(raw.command),
+      source:
+        raw.source === undefined
+          ? undefined
+          : (string(raw.source) as CatalogTool["source"]),
       tagPrefix:
         raw.tagPrefix === undefined ? undefined : string(raw.tagPrefix),
       numericVersion:
@@ -146,6 +156,17 @@ export function parseCatalog(value: unknown): Catalog {
       platforms: {},
     };
     validateIdentity(tool);
+    if (tool.source === "nuget") {
+      if (
+        tool.version?.mode !== "fixed" ||
+        tool.tagPrefix ||
+        tool.numericVersion
+      )
+        throw new Error(
+          "NuGet packages require a fixed version without tag filters.",
+        );
+      validateNuGetVersion(tool.version.tag);
+    }
     if (
       tool.numericVersion !== undefined &&
       typeof tool.numericVersion !== "boolean"
@@ -197,6 +218,13 @@ export function parseCatalog(value: unknown): Catalog {
           asset.digest === undefined ? undefined : string(asset.digest);
         if (digest && !/^sha256:[a-f0-9]{64}$/i.test(digest))
           throw new Error("Invalid catalog SHA-256 digest.");
+        if (tool.source === "nuget") {
+          validateNuGetPackage(name);
+          if (format !== "zip" || !digest)
+            throw new Error(
+              "NuGet packages require ZIP format and a SHA-256 digest.",
+            );
+        }
         return { name, digest };
       });
       tool.platforms[key] = { format, binaryPath, assets };

@@ -17,7 +17,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { unzipSync } from "fflate";
-import { GitHub, type Fetcher, type Release } from "./releases";
+import { GitHub, NuGet, type Fetcher, type Release } from "./releases";
 import {
   validateBinaryPath,
   validateIdentity,
@@ -32,6 +32,7 @@ interface Receipt {
   tool: string;
   command: string;
   repository: string;
+  source?: "github" | "nuget";
   tag: string;
   asset?: string;
   installedAt: string;
@@ -163,6 +164,7 @@ async function extract(
 export class ToolManager {
   private readonly definitions = new Map<string, ToolDefinition>();
   private readonly github: GitHub;
+  private readonly nuget: NuGet;
   private readonly dataDir: string;
   private readonly binDir: string;
   private readonly platform: Platform;
@@ -196,6 +198,7 @@ export class ToolManager {
         join(homedir(), ".local/bin"),
     );
     this.github = new GitHub(options.fetcher);
+    this.nuget = new NuGet(options.fetcher);
     this.log = options.log ?? console.log;
     this.confirm = options.confirm ?? (async () => false);
   }
@@ -322,6 +325,7 @@ export class ToolManager {
       name,
       command: receipt.command,
       repository: receipt.repository,
+      source: receipt.source,
     });
     return receipt as Receipt;
   }
@@ -329,10 +333,23 @@ export class ToolManager {
   private assertOwnership(tool: ToolIdentity, receipt: Receipt): void {
     if (
       receipt.command !== this.command(tool) ||
-      receipt.repository !== tool.repository
+      receipt.repository !== tool.repository ||
+      (receipt.source ?? "github") !== (tool.source ?? "github")
     )
       throw new Error(
         `Catalog ownership changed for ${tool.name}; uninstall the existing installation before installing its new definition.`,
+      );
+  }
+
+  private assertPackageOwnership(tool: ToolDefinition, receipt: Receipt): void {
+    if (tool.source !== "nuget") return;
+    const packages = tool.selectAssets(
+      { tag: receipt.tag, url: "" },
+      this.platform,
+    );
+    if (!receipt.asset || !packages.some((item) => item.name === receipt.asset))
+      throw new Error(
+        `NuGet package ownership changed for ${tool.name}; uninstall the existing installation before installing its new definition.`,
       );
   }
 
@@ -341,6 +358,7 @@ export class ToolManager {
       name: receipt.tool,
       repository: receipt.repository,
       command: receipt.command,
+      source: receipt.source,
     };
   }
 
@@ -390,7 +408,8 @@ export class ToolManager {
           const ownershipChanged =
             definition !== undefined &&
             (definition.repository !== tool.repository ||
-              this.command(definition) !== this.command(tool));
+              this.command(definition) !== this.command(tool) ||
+              (definition.source ?? "github") !== (tool.source ?? "github"));
           row.description =
             definition && !ownershipChanged
               ? definition.description
@@ -461,7 +480,10 @@ export class ToolManager {
       );
     await this.locked(tool, async () => {
       const installed = await this.installation(tool);
-      if (installed) this.assertOwnership(tool, installed.receipt);
+      if (installed) {
+        this.assertOwnership(tool, installed.receipt);
+        this.assertPackageOwnership(tool, installed.receipt);
+      }
       await this.ownsBin(tool);
       if (installed) {
         if (options.version && options.version !== installed.receipt.tag) {
@@ -480,10 +502,9 @@ export class ToolManager {
         throw new Error(
           `${name} is recorded at ${installed.receipt.tag}, but the catalog fixes ${fixed}; use update to repair it.`,
         );
-      const release = await this.github.release(
-        tool.repository,
+      const release = await this.release(
+        tool,
         installed?.receipt.tag ?? options.version ?? fixed,
-        tool.acceptRelease,
       );
       await this.activate(tool, release);
     });
@@ -546,14 +567,11 @@ export class ToolManager {
           `${name} is not installed; run myre install ${name} first.`,
         );
       this.assertOwnership(tool, installed.receipt);
+      this.assertPackageOwnership(tool, installed.receipt);
       await this.ownsBin(tool);
       const fixed =
         tool.version?.mode === "fixed" ? tool.version.tag : undefined;
-      const release = await this.github.release(
-        tool.repository,
-        fixed,
-        tool.acceptRelease,
-      );
+      const release = await this.release(tool, fixed);
       if (release.tag === installed.receipt.tag) {
         if (await this.executableExists(installed.executable)) {
           await this.ensureBin(tool);
@@ -570,9 +588,10 @@ export class ToolManager {
       }
       this.log(`${name}: ${installed.receipt.tag} -> ${release.tag}`);
       this.log(`Release notes: ${release.url}`);
-      this.log(
-        `Compare: https://github.com/${tool.repository}/compare/${encodeURIComponent(installed.receipt.tag)}...${encodeURIComponent(release.tag)}`,
-      );
+      if (tool.source !== "nuget")
+        this.log(
+          `Compare: https://github.com/${tool.repository}/compare/${encodeURIComponent(installed.receipt.tag)}...${encodeURIComponent(release.tag)}`,
+        );
       this.log(
         fixed
           ? `Version ${fixed} is selected by the catalog; tags are not compared as semantic versions.`
@@ -589,6 +608,20 @@ export class ToolManager {
       }
       await this.activate(tool, release);
     });
+  }
+
+  private async release(
+    tool: ToolDefinition,
+    version?: string,
+  ): Promise<Release> {
+    if (tool.source !== "nuget")
+      return this.github.release(tool.repository, version, tool.acceptRelease);
+    if (!version) throw new Error("NuGet packages require a fixed version.");
+    const provisional = { tag: version, url: "" };
+    const selection = tool.selectAssets(provisional, this.platform)[0];
+    if (!selection)
+      throw new Error("No package is configured for this platform.");
+    return this.nuget.release(selection.name, version);
   }
 
   private async activate(
@@ -616,11 +649,14 @@ export class ToolManager {
       let download:
         { selection: AssetSelection; response: Response } | undefined;
       for (const selection of selections) {
-        const response = await this.github.download(
-          tool.repository,
-          release.tag,
-          selection.name,
-        );
+        const response =
+          tool.source === "nuget"
+            ? await this.nuget.download(selection.name, release.tag)
+            : await this.github.download(
+                tool.repository,
+                release.tag,
+                selection.name,
+              );
         if (response) {
           download = { selection, response };
           break;
@@ -676,6 +712,7 @@ export class ToolManager {
         tool: tool.name,
         command: this.command(tool),
         repository: tool.repository,
+        source: tool.source === "nuget" ? "nuget" : undefined,
         tag: release.tag,
         asset: selection.name,
         installedAt: new Date().toISOString(),

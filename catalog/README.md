@@ -8,6 +8,7 @@ It does not build a CLI release. Keep the catalog Release as a prerelease, never
 
 Each tool has `name`, `description`, `repository` (`owner/repo`), `verifyArgs`, and `platforms`.
 Optional `command` defaults to `name`; Windows adds `.exe` when necessary.
+Optional `source` is `github` (default) or `nuget`. NuGet entries require a fixed normalized package version and a SHA-256 digest for each ZIP asset; each asset `name` is a lowercase NuGet package ID, not a URL. Only the selected executable entry is extracted.
 The Skill Tools table uses `description` as its task/scope, `command` (or `name`) as the executable, and `<command> --help` as its usage entry. Write descriptions as concise action phrases, such as `Analyze APK/DEX code` or `Download an APK for analysis`; there is no separate Skill tool list to maintain.
 See [Skill synchronization](#skill-synchronization) for ownership and update behavior.
 Optional `tagPrefix` both selects the release channel and strips that prefix for `{version}`.
@@ -23,7 +24,7 @@ For fixed tools, `install --version` cannot override the catalog. `update` compa
 
 A fixed tag alone does not guarantee immutable release assets. For integrity pinning, configure a trusted `digest` for every applicable asset and update the digests whenever the fixed tag changes.
 
-Older clients that do not support `version` reject catalogs containing it and use their cache or bundled fallback. Upgrade myre before relying on a fixed policy.
+Older clients that do not support `version` or `source` reject catalogs containing them and use their cache or bundled fallback. Upgrade myre before relying on fixed policies or NuGet packages. NuGet versions use the exact normalized package version, which can differ from the upstream GitHub Release tag; update the pinned version and all digests together.
 
 Platform keys are `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, and `windows-x64`.
 This does not add new CLI distribution targets. Each platform specifies:

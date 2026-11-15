@@ -18,6 +18,7 @@ export interface ToolIdentity {
   name: string;
   repository: string;
   command?: string;
+  source?: "github" | "nuget";
 }
 
 export type VersionPolicy = { mode: "latest" } | { mode: "fixed"; tag: string };
@@ -44,6 +45,9 @@ export function platformKey(platform: Platform): string {
 export function validateIdentity(tool: ToolIdentity): void {
   const command = tool.command ?? tool.name;
   if (
+    (tool.source !== undefined &&
+      tool.source !== "github" &&
+      tool.source !== "nuget") ||
     !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(tool.name) ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(command) ||
     ["receipt.json", "myre", "myre.exe"].includes(command.toLowerCase()) ||

@@ -14,6 +14,87 @@ export function validateReleaseTag(tag: string): void {
     throw new Error("Invalid release tag.");
 }
 
+export function validateNuGetPackage(id: string): void {
+  if (id.length > 100 || !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(id))
+    throw new Error("Invalid NuGet package ID.");
+}
+
+export function validateNuGetVersion(version: string): void {
+  if (
+    version.length > 128 ||
+    !/^\d+(?:\.\d+){2,3}(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?$/.test(version)
+  )
+    throw new Error("Invalid normalized NuGet package version.");
+}
+
+export class NuGet {
+  constructor(
+    private readonly fetcher: Fetcher = (url, init) => fetch(url, init),
+  ) {}
+
+  release(id: string, version: string): Release {
+    validateNuGetPackage(id);
+    validateNuGetVersion(version);
+    return {
+      tag: version,
+      url: `https://www.nuget.org/packages/${id}/${version}`,
+    };
+  }
+
+  async download(id: string, version: string): Promise<Response | null> {
+    validateNuGetPackage(id);
+    validateNuGetVersion(version);
+    let url = new URL(
+      `https://api.nuget.org/v3-flatcontainer/${id}/${version}/${id}.${version}.nupkg`,
+    );
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      if (
+        url.protocol !== "https:" ||
+        !["api.nuget.org", "globalcdn.nuget.org"].includes(url.hostname) ||
+        url.port ||
+        url.username ||
+        url.password ||
+        url.hash
+      )
+        throw new Error("NuGet returned an untrusted download URL.");
+      let response: Response;
+      try {
+        response = await this.fetcher(url.href, {
+          method: "GET",
+          redirect: "manual",
+          credentials: "omit",
+          headers: { "User-Agent": "myre", "Accept-Encoding": "identity" },
+          signal: AbortSignal.timeout(300_000),
+        });
+      } catch (error) {
+        throw new Error(
+          `NuGet request failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get("location");
+        await response.body?.cancel();
+        if (!location || redirects === 5)
+          throw new Error("Invalid NuGet download redirect.");
+        url = new URL(location, url);
+        continue;
+      }
+      if (response.status === 404) {
+        await response.body?.cancel();
+        return null;
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error(
+          `NuGet HTTP ${response.status}: ${response.statusText}`,
+        );
+      }
+      return response;
+    }
+    throw new Error("Too many NuGet download redirects.");
+  }
+}
+
 export class GitHub {
   constructor(
     private readonly fetcher: Fetcher = (url, init) => fetch(url, init),

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 3,
+  "revision": 4,
   "tools": [
     {
       "name": "diana",
@@ -104,6 +104,65 @@
         "windows-x64": {
           "format": "binary",
           "assets": [{ "name": "apkeep-x86_64-pc-windows-msvc.exe" }]
+        }
+      }
+    },
+    {
+      "name": "ilspycmd",
+      "description": "Analyze .NET assemblies",
+      "repository": "TsingShui/ILSpy",
+      "version": { "mode": "fixed", "tag": "v11.2" },
+      "verifyArgs": ["--version", "--disable-updatecheck"],
+      "platforms": {
+        "linux-x64": {
+          "format": "tar.gz",
+          "binaryPath": "ilspycmd",
+          "assets": [
+            {
+              "name": "ilspycmd-{tag}-linux-x64.tar.gz",
+              "digest": "sha256:09f378f13ff7416dadbfe729432b7b82d6db805efe0740939d65c559b2f23746"
+            }
+          ]
+        },
+        "linux-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "ilspycmd",
+          "assets": [
+            {
+              "name": "ilspycmd-{tag}-linux-arm64.tar.gz",
+              "digest": "sha256:59f551fc02460aa6e42cb7dd0b1538b8ea30d5db9fa7245c6c9f8b0a9c672ed2"
+            }
+          ]
+        },
+        "macos-x64": {
+          "format": "tar.gz",
+          "binaryPath": "ilspycmd",
+          "assets": [
+            {
+              "name": "ilspycmd-{tag}-macos-x64.tar.gz",
+              "digest": "sha256:71a9d478b2fb004cfabdade9bff53adcc752fdeda31c04aa17975d4e5618c4fb"
+            }
+          ]
+        },
+        "macos-arm64": {
+          "format": "tar.gz",
+          "binaryPath": "ilspycmd",
+          "assets": [
+            {
+              "name": "ilspycmd-{tag}-macos-arm64.tar.gz",
+              "digest": "sha256:2719f0012ddad054cb5d40001d46f3bde9e2e0532b5ea5309573e423328c776a"
+            }
+          ]
+        },
+        "windows-x64": {
+          "format": "zip",
+          "binaryPath": "ilspycmd.exe",
+          "assets": [
+            {
+              "name": "ilspycmd-{tag}-windows-x64.zip",
+              "digest": "sha256:e64051940fa35be8830d0f28b45cb44a6171065eb244f4d1e329faa0c0fed811"
+            }
+          ]
         }
       }
     },
