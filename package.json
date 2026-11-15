@@ -2,6 +2,9 @@
   "name": "myre",
   "module": "index.ts",
   "type": "module",
+  "bin": {
+    "myre": "./index.ts"
+  },
   "private": true,
   "scripts": {
     "start": "bun run index.ts",

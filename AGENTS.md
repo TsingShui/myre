@@ -8,6 +8,7 @@
 - `src/tools.ts`: Tool interfaces and shared identity/path validation.
 - `src/releases.ts`: Public GitHub Release links and asset downloads.
 - `src/manager.ts`: Installation records, installation, updates, locking, and version switching.
+- `install.sh`: Native CLI installer for Linux and macOS.
 - `scripts/release.ts`: Native release builds, packaging, and checksums.
 - `scripts/catalog.ts`: Independent catalog Release publication.
 - `.github/workflows/`: Catalog publication and four-target native Release builds.
