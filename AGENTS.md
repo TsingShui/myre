@@ -5,6 +5,7 @@
 - `index.ts`: CLI parsing, output, confirmation, and dispatch.
 - `catalog/tools.json`: Declarative tool definitions, Release filtering, and platform assets.
 - `src/catalog.ts`: Catalog validation, templates, remote refresh, caching, and bundled fallback.
+- `SKILL.md` and `src/skill.ts`: Static guidance, catalog-derived tool index, and managed Skill installation/synchronization.
 - `src/tools.ts`: Tool interfaces and shared identity/path validation.
 - `src/releases.ts`: Public GitHub Release links and asset downloads.
 - `src/manager.ts`: Installation records, installation, updates, locking, and version switching.

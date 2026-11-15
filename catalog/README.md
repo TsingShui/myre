@@ -8,6 +8,8 @@ It does not build a CLI release. Keep the catalog Release as a prerelease, never
 
 Each tool has `name`, `description`, `repository` (`owner/repo`), `verifyArgs`, and `platforms`.
 Optional `command` defaults to `name`; Windows adds `.exe` when necessary.
+The Skill Tools table uses `description` as its task/scope, `command` (or `name`) as the executable, and `<command> --help` as its usage entry. Write descriptions as concise action phrases, such as `Analyze APK/DEX code` or `Download an APK for analysis`; there is no separate Skill tool list to maintain.
+See [Skill synchronization](#skill-synchronization) for ownership and update behavior.
 Optional `tagPrefix` both selects the release channel and strips that prefix for `{version}`.
 Optional `numericVersion` requires the first character after the prefix to be a digit; it does not parse or compare semantic versions.
 Without a prefix, `{version}` is the unchanged upstream tag.
@@ -37,5 +39,13 @@ Verify upstream Releases and publishing workflows before changing these rules.
 The runtime trusts this fixed GitHub source over HTTPS. Catalog documents are limited to 1 MiB and are schema-validated before use.
 Older revisions and same-revision content changes cannot replace a valid newer cache.
 Caching uses atomic replacement; concurrent refreshes do not overwrite each other while the cache lock is held.
-Per-tool installation receipts remain authoritative for offline listing and uninstalling, even if entries disappear or change ownership.
+Per-tool installation receipts remain authoritative for installed versions, ownership, and uninstalling, even if entries disappear or change ownership. Listing descriptions use the selected catalog when repository and command still match, and otherwise fall back to the receipt.
 A repository or command change requires uninstalling the old installation before adopting the new definition.
+
+## Skill synchronization
+
+The CLI bundles the guide template and fallback catalog. `myre skill` and `myre skill install` use the newest valid cached or bundled catalog without network access, including in native binaries.
+
+Installation adds a hidden checksum and catalog revision marker. Reinstalling updates only unmodified, myre-managed files. Symlinks, unmanaged files, and user edits are preserved; remove an old, unmarked Skill manually before reinstalling.
+
+`install`, `update`, and `list --refresh` try to synchronize the installed Tools index using the same selected catalog, including validated fallbacks. They preserve the rest of the guide, never install a missing Skill, skip unchanged content, and refuse older revisions. Synchronization failures only warn and do not block tool operations.

@@ -387,7 +387,14 @@ export class ToolManager {
         const installation = await this.installation({ name });
         if (installation) {
           const tool = this.identity(installation.receipt);
-          row.description = installation.receipt.description ?? row.description;
+          const ownershipChanged =
+            definition !== undefined &&
+            (definition.repository !== tool.repository ||
+              this.command(definition) !== this.command(tool));
+          row.description =
+            definition && !ownershipChanged
+              ? definition.description
+              : (installation.receipt.description ?? row.description);
           row.version = installation.receipt.tag;
           row.path = this.bin(tool);
           row.status =
@@ -398,11 +405,7 @@ export class ToolManager {
           if (row.status === "broken")
             row.error =
               "Executable or command link is missing; run install to repair it.";
-          if (
-            definition &&
-            (definition.repository !== tool.repository ||
-              this.command(definition) !== this.command(tool))
-          )
+          if (ownershipChanged)
             row.error =
               "Catalog ownership changed; uninstall before installing the new definition.";
         } else if (!definition) continue;

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import Table from "cli-table3";
 import { ToolManager } from "./src/manager";
-import { loadTools } from "./src/catalog";
+import { loadCatalog } from "./src/catalog";
+import { installSkill, renderSkill, syncSkill } from "./src/skill";
 
 const help = `myre - reverse-engineering CLI tool manager
 
@@ -10,10 +11,13 @@ Usage:
   myre install [<tool> | --all | -all]
   myre install <tool> --version <tag>
   myre update <tool> [--yes]
-  myre uninstall <tool>`;
+  myre uninstall <tool>
+  myre skill
+  myre skill install`;
 
 type Command =
   | { name: "help" }
+  | { name: "skill"; install: boolean }
   | { name: "list"; refresh: boolean }
   | { name: "install"; tool?: string; version?: string }
   | { name: "update"; tool: string; yes: boolean }
@@ -26,6 +30,12 @@ export function parseArgs(args: string[]): Command {
   )
     return { name: "help" };
   const [command, tool, ...flags] = args;
+  if (command === "skill") {
+    if (args.length === 1) return { name: "skill", install: false };
+    if (args.length === 2 && tool === "install")
+      return { name: "skill", install: true };
+    throw new Error("Usage: myre skill [install]");
+  }
   if (command === "list") {
     if (args.length === 1) return { name: "list", refresh: false };
     if (args.length === 2 && tool === "--refresh")
@@ -85,11 +95,20 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
       console.log(help);
       return 0;
     }
+    if (command.name === "skill") {
+      const catalog = await loadCatalog();
+      if (command.install)
+        console.log(`Installed myre Skill to ${await installSkill(catalog)}`);
+      else await Bun.write(Bun.stdout, renderSkill(catalog));
+      return 0;
+    }
     const refresh =
       command.name === "install" ||
       command.name === "update" ||
       (command.name === "list" && command.refresh);
-    const tools = await loadTools(refresh);
+    const catalog = await loadCatalog(refresh);
+    if (refresh) await syncSkill(catalog);
+    const tools = catalog.tools;
     const manager = new ToolManager(tools, { confirm });
     switch (command.name) {
       case "list": {

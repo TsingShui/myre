@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "revision": 2,
+  "revision": 3,
   "tools": [
     {
       "name": "diana",
-      "description": "APK / DEX decompilation and static analysis",
+      "description": "Analyze APK/DEX code",
       "repository": "TsingShui/Diana",
       "tagPrefix": "diana-v",
       "numericVersion": true,
@@ -89,7 +89,7 @@
     },
     {
       "name": "apkeep",
-      "description": "Download APK assets from Google Play",
+      "description": "Download an APK for analysis",
       "repository": "EFForg/apkeep",
       "verifyArgs": ["--version"],
       "platforms": {
@@ -109,7 +109,7 @@
     },
     {
       "name": "kuna",
-      "description": "Native binary decompilation",
+      "description": "Analyze native binaries",
       "repository": "Noelo-Lab/kuna",
       "verifyArgs": ["--version"],
       "platforms": {

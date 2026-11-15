@@ -44,6 +44,10 @@ export interface Catalog {
   revision: number;
   tools: CatalogTool[];
 }
+export interface LoadedCatalog {
+  revision: number;
+  tools: ToolDefinition[];
+}
 
 function object(value: unknown, keys?: string[]): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -332,7 +336,7 @@ async function download(): Promise<Catalog> {
 }
 
 /** Refresh only when requested; offline reads never create files or use the network. */
-export async function loadTools(refresh = false): Promise<ToolDefinition[]> {
+export async function loadCatalog(refresh = false): Promise<LoadedCatalog> {
   const directory = resolve(process.env.MYRE_HOME ?? join(homedir(), ".myre"));
   const path = join(directory, "catalog.json");
   const bundledCatalog = parseCatalog(bundled);
@@ -349,7 +353,7 @@ export async function loadTools(refresh = false): Promise<ToolDefinition[]> {
       console.warn(
         `Cannot refresh tool catalog; using revision ${selected.revision}: ${error instanceof Error ? error.message : error}`,
       );
-      return definitions(selected);
+      return { revision: selected.revision, tools: definitions(selected) };
     }
     let lock;
     const lockPath = join(directory, ".catalog.lock");
@@ -381,5 +385,5 @@ export async function loadTools(refresh = false): Promise<ToolDefinition[]> {
     }
     console.error(`Catalog ready (revision ${selected.revision}).`);
   }
-  return definitions(selected);
+  return { revision: selected.revision, tools: definitions(selected) };
 }

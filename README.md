@@ -2,45 +2,54 @@
 
 A lightweight reverse-engineering CLI tool manager using public GitHub Releases.
 
-## Quick Start
+## Install
 
-Install the native binary on Linux (glibc) or macOS (arm64):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/TsingShui/myre/main/install.sh | sh
-```
-
-Requires `curl`, `tar`, and `sha256sum` or `shasum`. Installs to `~/.local/bin` without overwriting an existing command; set `MYRE_INSTALL_DIR` to an absolute path to change the destination. Add it to PATH yourself.
-
-Alternatively, install from GitHub with [Bun](https://bun.sh):
+Using [Bun](https://bun.sh):
 
 ```bash
 bun install -g github:TsingShui/myre#main
 ```
 
-Bun must be on PATH; add its global bin directory (`bun pm bin -g`) too. Windows users can also download a native binary from [GitHub Releases](https://github.com/TsingShui/myre/releases/latest).
+Or use the native installer on Linux (glibc) and macOS (arm64):
 
 ```bash
-myre list --refresh
-myre install                # all supported tools; -all and --all are aliases
-myre install diana          # one tool; add --version <tag> for a specific release
-myre update diana           # add --yes for non-interactive updates
+curl -fsSL https://raw.githubusercontent.com/TsingShui/myre/main/install.sh | sh
+```
+
+Prebuilt binaries are also available on [GitHub Releases](https://github.com/TsingShui/myre/releases/latest).
+
+## Usage
+
+```bash
+myre list                  # offline; --refresh fetches the catalog
+myre install diana         # --version <tag> selects a release
+myre install               # all supported tools
+myre update diana          # --yes for non-interactive updates
 myre uninstall diana
 ```
 
 ## Tools
 
-- [Diana](https://github.com/TsingShui/Diana) — APK / DEX decompilation and static analysis.
-- [Kuna](https://github.com/Noelo-Lab/kuna) — native binary decompilation.
-- [apkeep](https://github.com/EFForg/apkeep) — APK collection from Google Play (Linux and Windows).
+- [Diana](https://github.com/TsingShui/Diana) — Analyze APK/DEX code.
+- [Kuna](https://github.com/Noelo-Lab/kuna) — Analyze native binaries.
+- [apkeep](https://github.com/EFForg/apkeep) — Download an APK for analysis (Linux/Windows).
+
+## Agent Skill
+
+```bash
+myre skill                 # print the reverse guide
+myre skill install         # ~/.agents/skills/myre/SKILL.md
+```
+
+Catalog refreshes sync the installed Skill's tool index without overwriting user edits. [Details](catalog/README.md#skill-synchronization).
 
 ## Catalog and Paths
 
-`install` and `update` refresh the tool catalog, falling back to a cached or bundled copy, and show download progress in a terminal. `list` and `uninstall` work offline; use `list --refresh` to fetch the catalog.
+`install` and `update` refresh the catalog with cached/bundled fallback. `list` and `uninstall` are offline by default.
 
-Tools and the catalog cache live in `~/.myre`; command links go in `~/.local/bin`. Override these with `MYRE_HOME` and `MYRE_BIN_DIR`. Windows requires Developer Mode or symbolic-link privileges.
+Data: `~/.myre` (`MYRE_HOME`); commands: `~/.local/bin` (`MYRE_BIN_DIR`). Windows needs Developer Mode or symlink privileges.
 
-To maintain tools, edit [catalog/tools.json](catalog/tools.json), increment `revision`, and push to `main`. Tools can follow upstream Latest or use a catalog-fixed tag. See the [catalog format](catalog/README.md).
+Maintain tools through the [catalog](catalog/README.md), independently of CLI releases.
 
 ## Development
 
