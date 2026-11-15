@@ -12,6 +12,17 @@ Optional `tagPrefix` both selects the release channel and strips that prefix for
 Optional `numericVersion` requires the first character after the prefix to be a digit; it does not parse or compare semantic versions.
 Without a prefix, `{version}` is the unchanged upstream tag.
 
+### Version policy
+
+`version` is optional; omit it or use `{"mode": "latest"}` to resolve the upstream Latest Release.
+Use `{"mode": "fixed", "tag": "v1.2.3"}` to install only that exact Release tag. Fixed tags must satisfy `tagPrefix` and `numericVersion` when configured.
+
+For fixed tools, `install --version` cannot override the catalog. `update` compares the installed tag with the catalog tag, without querying upstream Latest; changing the catalog tag makes it available for a confirmed update. `install` never upgrades an existing tool. If its executable is missing and the catalog now fixes a different tag, use `update` rather than repairing the old tag with the new asset rules.
+
+A fixed tag alone does not guarantee immutable release assets. For integrity pinning, configure a trusted `digest` for every applicable asset and update the digests whenever the fixed tag changes.
+
+Older clients that do not support `version` reject catalogs containing it and use their cache or bundled fallback. Upgrade myre before relying on a fixed policy.
+
 Platform keys are `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, and `windows-x64`.
 This does not add new CLI distribution targets. Each platform specifies:
 

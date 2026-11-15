@@ -32,6 +32,7 @@ myre uninstall diana
 
 - [Diana](https://github.com/TsingShui/Diana) — APK / DEX decompilation and static analysis.
 - [Kuna](https://github.com/Noelo-Lab/kuna) — native binary decompilation.
+- [apkeep](https://github.com/EFForg/apkeep) — APK collection from Google Play (Linux and Windows).
 
 ## Catalog and Paths
 
@@ -39,7 +40,7 @@ myre uninstall diana
 
 Tools and the catalog cache live in `~/.myre`; command links go in `~/.local/bin`. Override these with `MYRE_HOME` and `MYRE_BIN_DIR`. Windows requires Developer Mode or symbolic-link privileges.
 
-To maintain tools, edit [catalog/tools.json](catalog/tools.json), increment `revision`, and push to `main`. The catalog publishes independently of CLI releases. See the [catalog format](catalog/README.md).
+To maintain tools, edit [catalog/tools.json](catalog/tools.json), increment `revision`, and push to `main`. Tools can follow upstream Latest or use a catalog-fixed tag. See the [catalog format](catalog/README.md).
 
 ## Development
 

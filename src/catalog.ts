@@ -2,12 +2,14 @@ import { mkdir, open, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import bundled from "../catalog/tools.json";
+import { validateReleaseTag } from "./releases";
 import {
   platformKey,
   validateBinaryPath,
   validateIdentity,
   type AssetSelection,
   type ToolDefinition,
+  type VersionPolicy,
 } from "./tools";
 
 export const catalogURL =
@@ -33,6 +35,7 @@ interface CatalogTool {
   command?: string;
   tagPrefix?: string;
   numericVersion?: boolean;
+  version?: VersionPolicy;
   verifyArgs: string[];
   platforms: Record<string, CatalogPlatform>;
 }
@@ -69,6 +72,17 @@ function array(value: unknown, max: number, allowEmpty = false): unknown[] {
   )
     throw new Error("Invalid catalog array length.");
   return value;
+}
+function parseVersion(value: unknown): VersionPolicy {
+  const policy = object(value, ["mode", "tag"]);
+  if (policy.mode === "latest" && policy.tag === undefined)
+    return { mode: "latest" };
+  if (policy.mode === "fixed") {
+    const tag = string(policy.tag);
+    validateReleaseTag(tag);
+    return { mode: "fixed", tag };
+  }
+  throw new Error("Invalid catalog version policy.");
 }
 function render(template: string, values: Record<string, string>): string {
   const result = template.replace(/\{([^{}]+)\}/g, (_, key: string) => {
@@ -107,6 +121,7 @@ export function parseCatalog(value: unknown): Catalog {
       "command",
       "tagPrefix",
       "numericVersion",
+      "version",
       "verifyArgs",
       "platforms",
     ]);
@@ -121,6 +136,8 @@ export function parseCatalog(value: unknown): Catalog {
         raw.numericVersion === undefined
           ? undefined
           : (raw.numericVersion as boolean),
+      version:
+        raw.version === undefined ? undefined : parseVersion(raw.version),
       verifyArgs: array(raw.verifyArgs, 16).map(string),
       platforms: {},
     };
@@ -130,6 +147,17 @@ export function parseCatalog(value: unknown): Catalog {
       typeof tool.numericVersion !== "boolean"
     )
       throw new Error("numericVersion must be a boolean.");
+    if (tool.version?.mode === "fixed") {
+      const tag = tool.version.tag;
+      if (
+        (tool.tagPrefix && !tag.startsWith(tool.tagPrefix)) ||
+        (tool.numericVersion &&
+          !/^\d/.test(tool.tagPrefix ? tag.slice(tool.tagPrefix.length) : tag))
+      )
+        throw new Error(
+          `Fixed version is outside the release channel: ${tool.name}`,
+        );
+    }
     const command = (tool.command ?? tool.name)
       .toLowerCase()
       .replace(/\.exe$/, "");

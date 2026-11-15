@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 1,
+  "revision": 2,
   "tools": [
     {
       "name": "diana",
@@ -84,6 +84,26 @@
               "name": "diana-x86_64-pc-windows-msvc.zip"
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "apkeep",
+      "description": "Download APK assets from Google Play",
+      "repository": "EFForg/apkeep",
+      "verifyArgs": ["--version"],
+      "platforms": {
+        "linux-x64": {
+          "format": "binary",
+          "assets": [{ "name": "apkeep-x86_64-unknown-linux-gnu" }]
+        },
+        "linux-arm64": {
+          "format": "binary",
+          "assets": [{ "name": "apkeep-aarch64-unknown-linux-gnu" }]
+        },
+        "windows-x64": {
+          "format": "binary",
+          "assets": [{ "name": "apkeep-x86_64-pc-windows-msvc.exe" }]
         }
       }
     },

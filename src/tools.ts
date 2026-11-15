@@ -20,8 +20,11 @@ export interface ToolIdentity {
   command?: string;
 }
 
+export type VersionPolicy = { mode: "latest" } | { mode: "fixed"; tag: string };
+
 export interface ToolDefinition extends ToolIdentity {
   description: string;
+  version?: VersionPolicy;
   supports?(platform: Platform): boolean;
   acceptRelease?(release: Release): boolean;
   selectAssets(release: Release, platform: Platform): AssetSelection[];

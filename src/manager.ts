@@ -451,6 +451,11 @@ export class ToolManager {
     options: { version?: string } = {},
   ): Promise<void> {
     const tool = this.tool(name);
+    const fixed = tool.version?.mode === "fixed" ? tool.version.tag : undefined;
+    if (fixed && options.version && options.version !== fixed)
+      throw new Error(
+        `${name} is fixed to ${fixed} by the catalog; --version cannot override it.`,
+      );
     await this.locked(tool, async () => {
       const installed = await this.installation(tool);
       if (installed) this.assertOwnership(tool, installed.receipt);
@@ -463,16 +468,18 @@ export class ToolManager {
         }
         if (await this.executableExists(installed.executable)) {
           await this.ensureBin(tool);
-          this.log(
-            `${name} is installed at ${installed.receipt.tag}: ${this.bin(tool)}`,
-          );
+          this.log(`${name} is already installed: ${installed.receipt.tag}`);
           return;
         }
       }
-      // Repair a missing executable at its recorded version, without implicitly upgrading.
+      // Repair only when the current catalog still describes the installed version.
+      if (installed && fixed && installed.receipt.tag !== fixed)
+        throw new Error(
+          `${name} is recorded at ${installed.receipt.tag}, but the catalog fixes ${fixed}; use update to repair it.`,
+        );
       const release = await this.github.release(
         tool.repository,
-        installed?.receipt.tag ?? options.version,
+        installed?.receipt.tag ?? options.version ?? fixed,
         tool.acceptRelease,
       );
       await this.activate(tool, release);
@@ -537,15 +544,21 @@ export class ToolManager {
         );
       this.assertOwnership(tool, installed.receipt);
       await this.ownsBin(tool);
+      const fixed =
+        tool.version?.mode === "fixed" ? tool.version.tag : undefined;
       const release = await this.github.release(
         tool.repository,
-        undefined,
+        fixed,
         tool.acceptRelease,
       );
       if (release.tag === installed.receipt.tag) {
         if (await this.executableExists(installed.executable)) {
           await this.ensureBin(tool);
-          this.log(`${name} is already at the latest release: ${release.tag}`);
+          this.log(
+            fixed
+              ? `${name} is already at the catalog's fixed version: ${release.tag}`
+              : `${name} is already at the latest release: ${release.tag}`,
+          );
         } else {
           this.log(`Repairing ${name} at ${release.tag}.`);
           await this.activate(tool, release);
@@ -558,7 +571,9 @@ export class ToolManager {
         `Compare: https://github.com/${tool.repository}/compare/${encodeURIComponent(installed.receipt.tag)}...${encodeURIComponent(release.tag)}`,
       );
       this.log(
-        "Latest is selected by upstream; tags are not compared as semantic versions.",
+        fixed
+          ? `Version ${fixed} is selected by the catalog; tags are not compared as semantic versions.`
+          : "Latest is selected by upstream; tags are not compared as semantic versions.",
       );
       if (
         !options.yes &&

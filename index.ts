@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import Table from "cli-table3";
 import { ToolManager } from "./src/manager";
 import { loadTools } from "./src/catalog";
 
@@ -104,20 +105,21 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
           "not-installed": "Not installed",
           broken: "Broken",
         };
-        console.log(
-          ["Tool", "Status", "Version", "Path", "Description"].join("\t"),
-        );
+        const table = new Table({
+          head: ["Tool", "Status", "Version", "Description"],
+          style: { head: [], border: [] },
+        });
         for (const row of rows) {
-          console.log(
-            [
-              row.name,
-              labels[row.status],
-              row.version ?? "-",
-              row.path ?? "-",
-              row.description,
-            ].join("\t"),
-          );
-          if (row.error) console.log(`  ${row.error}`);
+          table.push([
+            row.name,
+            labels[row.status],
+            row.version ?? "-",
+            row.description,
+          ]);
+        }
+        console.log(table.toString());
+        for (const row of rows) {
+          if (row.error) console.log(`${row.name}: ${row.error}`);
         }
         break;
       }

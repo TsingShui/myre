@@ -18,6 +18,7 @@
     "typescript": "^7"
   },
   "dependencies": {
+    "cli-table3": "^0.6.5",
     "fflate": "^0.8.3"
   }
 }

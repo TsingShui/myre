@@ -5,6 +5,15 @@ export interface Release {
   url: string;
 }
 
+export function validateReleaseTag(tag: string): void {
+  if (
+    !tag ||
+    /[\x00-\x20\x7f]/.test(tag) ||
+    tag.split("/").some((part) => !part || part === "." || part === "..")
+  )
+    throw new Error("Invalid release tag.");
+}
+
 export class GitHub {
   constructor(
     private readonly fetcher: Fetcher = (url, init) => fetch(url, init),
@@ -78,12 +87,7 @@ export class GitHub {
         throw new Error("GitHub Latest returned an unexpected release URL.");
       tag = decodeURIComponent(target.pathname.slice(prefix.length));
     }
-    if (
-      !tag ||
-      /[\x00-\x20\x7f]/.test(tag) ||
-      tag.split("/").some((part) => !part || part === "." || part === "..")
-    )
-      throw new Error("Invalid release tag.");
+    validateReleaseTag(tag);
     const release = {
       tag,
       url: `https://github.com/${repository}/releases/tag/${encodeURIComponent(tag)}`,
