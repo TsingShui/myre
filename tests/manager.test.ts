@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zipSync } from "fflate";
 import { ToolManager, type ManagerOptions } from "../src/manager";
 import type { Fetcher } from "../src/releases";
 import type { ToolDefinition } from "../src/tools";
@@ -134,24 +135,17 @@ test("list reads local installation state without network or filesystem changes"
 
 test("install downloads a public archive with a 404 fallback and remains idempotent", async () => {
   const f = await fixture();
-  const source = join(f.directory, "source");
-  await mkdir(source);
-  await Bun.write(join(source, "fixture"), script("v1"));
-  await Bun.write(join(source, "unrelated"), "must not be installed");
-  const archive = join(f.directory, "fixture.tar.gz");
-  const tar = Bun.spawn(
-    ["tar", "-czf", archive, "-C", source, "fixture", "unrelated"],
+  const archive = new Bun.Archive(
     {
-      stdout: "ignore",
-      stderr: "pipe",
+      "bin/fixture": script("v1"),
+      unrelated: "must not be installed",
     },
+    { compress: "gzip" },
   );
-  const stderr = await new Response(tar.stderr).text();
-  if ((await tar.exited) !== 0) throw new Error(stderr);
-  f.upstream.add("v1", new Uint8Array(await Bun.file(archive).arrayBuffer()));
+  f.upstream.add("v1", await archive.bytes());
   f.tool.selectAssets = () => [
-    { name: "missing", format: "tar.gz", binaryPath: "fixture" },
-    { name: "fixture", format: "tar.gz", binaryPath: "fixture" },
+    { name: "missing", format: "tar.gz", binaryPath: "bin/fixture" },
+    { name: "fixture", format: "tar.gz", binaryPath: "bin/fixture" },
   ];
 
   await f.manager.install("fixture");
@@ -174,14 +168,27 @@ test("install downloads a public archive with a 404 fallback and remains idempot
   expect(f.upstream.requests).toHaveLength(count);
 });
 
-test("update compares public tags, shows review links, and skips unchanged releases", async () => {
+test("update installs a ZIP, shows review links, and skips unchanged tags", async () => {
   const f = await fixture();
   await f.manager.install("fixture");
   const previous = await readlink(join(f.root, "current"));
-  f.upstream.add("v2");
+  f.upstream.add(
+    "v2",
+    zipSync({
+      "bin/fixture": script("v2"),
+      unrelated: new TextEncoder().encode("must not be installed"),
+    }),
+  );
+  f.tool.selectAssets = () => [
+    { name: "fixture", format: "zip", binaryPath: "bin/fixture" },
+  ];
 
   await f.manager.update("fixture");
   expect(await output(f.binary)).toBe("v2");
+  expect((await readdir(join(f.root, "current"))).sort()).toEqual([
+    "fixture",
+    "receipt.json",
+  ]);
   expect((await f.manager.list())[0]?.version).toBe("v2");
   expect(f.logs.join("\n")).toContain(
     "https://github.com/test/fixture/releases/tag/v2",

@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { unzipSync } from "fflate";
 import { GitHub, type Fetcher, type Release } from "./releases";
 import type { AssetSelection, Platform, ToolDefinition } from "./tools";
 
@@ -69,7 +70,7 @@ function validateEntry(selection: AssetSelection): string {
     !entry ||
     entry.startsWith("/") ||
     entry.startsWith("-") ||
-    /[\\\x00\r\n*?\[\]]/.test(entry) ||
+    /[\\\x00\r\n*?\[\]{}!]/.test(entry) ||
     entry
       .replace(/^\.\//, "")
       .split("/")
@@ -91,26 +92,21 @@ async function extract(
     return;
   }
   const entry = validateEntry(selection);
-  const args =
-    selection.format === "tar.gz"
-      ? ["tar", "-xOzf", archive, "--", entry]
-      : ["unzip", "-p", archive, entry];
-  const file = await open(output, "wx", 0o755);
-  try {
-    // Stream only the selected entry to a file, never extract an archive tree.
-    const child = Bun.spawn(args, {
-      stdout: file.fd,
-      stderr: "pipe",
-      timeout: 60_000,
-    });
-    const stderr = await new Response(child.stderr).text();
-    if ((await child.exited) !== 0)
-      throw new Error(
-        `Archive extraction failed (${args[0]}): ${stderr.trim()}`,
-      );
-  } finally {
-    await file.close();
+  const data = await Bun.file(archive).bytes();
+  if (selection.format === "tar.gz") {
+    const files = await new Bun.Archive(data).files(entry);
+    const file = files.get(entry);
+    if (!file) throw new Error(`Archive entry not found: ${entry}`);
+    await Bun.write(output, file);
+    return;
   }
+  const files = unzipSync(data, {
+    filter: (file) => file.name === entry,
+  });
+  const file = Object.hasOwn(files, entry) ? files[entry] : undefined;
+  if (!file) throw new Error(`Archive entry not found: ${entry}`);
+  // Write only the selected bytes, never archive paths or links.
+  await Bun.write(output, file);
 }
 
 export class ToolManager {

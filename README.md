@@ -3,8 +3,6 @@
 A lightweight reverse-engineering CLI tool manager built with TypeScript and Bun.
 Install and update tools from public GitHub Releases without an API token.
 
-Supports [Diana](https://github.com/TsingShui/Diana) and [Kuna](https://github.com/Noelo-Lab/kuna) on Linux and macOS (x64 / arm64).
-
 ## Quick Start
 
 ```bash
@@ -19,13 +17,20 @@ bun run build
 
 Use `install <tool> --version <tag>` for a specific release and `update <tool> --yes` for non-interactive updates.
 
+## Tools
+
+- [Diana](https://github.com/TsingShui/Diana)
+- [Kuna](https://github.com/Noelo-Lab/kuna)
+
+Supported platforms: Linux and macOS (x64 / arm64).
+
 ## Installation Paths
 
 - Tools: `~/.mere/tools/`
 - Command symlinks: `~/.local/bin/` — add this directory to PATH.
 - Overrides: `MERE_HOME` and `MERE_BIN_DIR`.
 
-Requires `tar` for tar.gz archives or `unzip` for zip archives. Existing unrelated commands are never overwritten.
+Archives are unpacked in-process; no system `tar` or `unzip` is required. Existing unrelated commands are never overwritten.
 
 ## Development
 
