@@ -1,5 +1,5 @@
 {
-  "name": "mere",
+  "name": "myre",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -7,7 +7,7 @@
     "start": "bun run index.ts",
     "test": "bun test",
     "typecheck": "bun check",
-    "build": "bun build ./index.ts --compile --outfile ./dist/mere"
+    "build": "bun build ./index.ts --compile --outfile ./dist/myre"
   },
   "devDependencies": {
     "@types/bun": "latest"

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "mere",
+      "name": "myre",
       "dependencies": {
         "fflate": "^0.8.3",
       },

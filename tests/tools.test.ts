@@ -13,6 +13,11 @@ test("Diana builds CLI asset candidates and rejects GUI release tags", () => {
     binaryPath: "diana",
   });
   expect(diana.acceptRelease?.({ tag: "diana-gui-v1", url: "" })).toBe(false);
+  expect(diana.selectAssets(release, { os: "win32", arch: "x64" })[0]).toEqual({
+    name: "diana-0.2.7-x86_64-pc-windows-msvc.zip",
+    format: "zip",
+    binaryPath: "diana.exe",
+  });
 });
 
 test("Kuna prefers the musl CLI archive and provides a GNU fallback", () => {
@@ -32,4 +37,9 @@ test("Kuna prefers the musl CLI archive and provides a GNU fallback", () => {
       binaryPath: "kuna-v1.998-linux-x86_64/kuna",
     },
   ]);
+  expect(kuna.selectAssets(release, { os: "win32", arch: "x64" })[0]).toEqual({
+    name: "kuna-v1.998-windows-x86_64.zip",
+    format: "zip",
+    binaryPath: "kuna-v1.998-windows-x86_64/kuna.exe",
+  });
 });

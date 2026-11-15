@@ -1,14 +1,48 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, readdir, readlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 import { ToolManager, type ManagerOptions } from "../src/manager";
 import type { Fetcher } from "../src/releases";
 import type { ToolDefinition } from "../src/tools";
 
-const script = (version: string) =>
-  new TextEncoder().encode(`#!/bin/sh\nprintf '%s\\n' '${version}'\n`);
+const windows = process.platform === "win32";
+const binaryName = windows ? "fixture.exe" : "fixture";
+const binaries = new Map<string, Uint8Array>();
+let fixtureDirectory: string;
+
+beforeAll(async () => {
+  fixtureDirectory = await mkdtemp(join(tmpdir(), "myre-native-fixtures-"));
+  for (const version of ["v1", "v2", "broken"]) {
+    const outfile = join(
+      fixtureDirectory,
+      `${version}${windows ? ".exe" : ""}`,
+    );
+    const result = await Bun.build({
+      entrypoints: [
+        fileURLToPath(new URL("./fixtures/tool.ts", import.meta.url)),
+      ],
+      compile: { outfile, autoloadDotenv: false, autoloadBunfig: false },
+      define: { FIXTURE_VERSION: JSON.stringify(version) },
+    });
+    if (!result.success)
+      throw new AggregateError(result.logs, "Failed to compile test fixture.");
+    binaries.set(version, await Bun.file(outfile).bytes());
+  }
+}, 120_000);
+
+afterAll(async () => {
+  if (fixtureDirectory)
+    await rm(fixtureDirectory, { recursive: true, force: true });
+});
+
+function executable(version: string): Uint8Array {
+  const binary = binaries.get(version);
+  if (!binary) throw new Error(`Unknown fixture version: ${version}`);
+  return binary;
+}
 
 class FakePublicGitHub {
   releases = new Map<string, Uint8Array>();
@@ -17,7 +51,7 @@ class FakePublicGitHub {
   downloadCount = 0;
   contentLength?: number;
 
-  add(tag: string, content = script(tag)) {
+  add(tag: string, content = executable(tag)) {
     this.releases.set(tag, content);
     this.latest = tag;
   }
@@ -72,7 +106,7 @@ afterEach(async () => {
 });
 
 async function fixture(options: ManagerOptions = {}) {
-  const directory = await mkdtemp(join(tmpdir(), "mere-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "myre-test-"));
   temporary.push(directory);
   const dataDir = join(directory, "data");
   const binDir = join(directory, "bin");
@@ -102,7 +136,14 @@ async function fixture(options: ManagerOptions = {}) {
     tool,
     directory,
     root,
-    binary: join(binDir, "fixture"),
+    binary: join(binDir, binaryName),
+    currentDirectory: async () => {
+      const target = resolve(
+        root,
+        await readlink(join(root, windows ? "current.exe" : "current")),
+      );
+      return windows ? dirname(target) : target;
+    },
   };
 }
 
@@ -137,56 +178,59 @@ test("install downloads a public archive with a 404 fallback and remains idempot
   const f = await fixture();
   const archive = new Bun.Archive(
     {
-      "bin/fixture": script("v1"),
+      [`bin/${binaryName}`]: executable("v1"),
       unrelated: "must not be installed",
     },
-    { compress: "gzip" },
+    { compress: "gzip", level: 1 },
   );
   f.upstream.add("v1", await archive.bytes());
   f.tool.selectAssets = () => [
-    { name: "missing", format: "tar.gz", binaryPath: "bin/fixture" },
-    { name: "fixture", format: "tar.gz", binaryPath: "bin/fixture" },
+    { name: "missing", format: "tar.gz", binaryPath: `bin/${binaryName}` },
+    { name: "fixture", format: "tar.gz", binaryPath: `bin/${binaryName}` },
   ];
 
   await f.manager.install("fixture");
   expect(await output(f.binary)).toBe("v1");
   expect(
-    await Bun.file(join(f.root, "current/receipt.json")).json(),
+    await Bun.file(join(await f.currentDirectory(), "receipt.json")).json(),
   ).toMatchObject({
     schema: 1,
     tool: "fixture",
     tag: "v1",
     asset: "fixture",
   });
-  expect((await readdir(join(f.root, "current"))).sort()).toEqual([
-    "fixture",
+  expect((await readdir(await f.currentDirectory())).sort()).toEqual([
+    binaryName,
     "receipt.json",
   ]);
 
   const count = f.upstream.requests.length;
   await f.manager.install("fixture");
   expect(f.upstream.requests).toHaveLength(count);
-});
+}, 60_000);
 
 test("update installs a ZIP, shows review links, and skips unchanged tags", async () => {
   const f = await fixture();
   await f.manager.install("fixture");
-  const previous = await readlink(join(f.root, "current"));
+  const previous = await f.currentDirectory();
   f.upstream.add(
     "v2",
-    zipSync({
-      "bin/fixture": script("v2"),
-      unrelated: new TextEncoder().encode("must not be installed"),
-    }),
+    zipSync(
+      {
+        [`bin/${binaryName}`]: executable("v2"),
+        unrelated: new TextEncoder().encode("must not be installed"),
+      },
+      { level: 1 },
+    ),
   );
   f.tool.selectAssets = () => [
-    { name: "fixture", format: "zip", binaryPath: "bin/fixture" },
+    { name: "fixture", format: "zip", binaryPath: `bin/${binaryName}` },
   ];
 
   await f.manager.update("fixture");
   expect(await output(f.binary)).toBe("v2");
-  expect((await readdir(join(f.root, "current"))).sort()).toEqual([
-    "fixture",
+  expect((await readdir(await f.currentDirectory())).sort()).toEqual([
+    binaryName,
     "receipt.json",
   ]);
   expect((await f.manager.list())[0]?.version).toBe("v2");
@@ -196,12 +240,12 @@ test("update installs a ZIP, shows review links, and skips unchanged tags", asyn
   expect(f.logs.join("\n")).toContain(
     "https://github.com/test/fixture/compare/v1...v2",
   );
-  expect(await Bun.file(join(f.root, previous, "fixture")).exists()).toBe(true);
+  expect(await Bun.file(join(previous, binaryName)).exists()).toBe(true);
   const count = f.upstream.requests.length;
   await f.manager.update("fixture");
   expect(f.upstream.requests).toHaveLength(count + 1);
   expect(f.upstream.downloadCount).toBe(2);
-});
+}, 60_000);
 
 test("cancelled update does not download or replace the current version", async () => {
   const f = await fixture({ confirm: async () => false });
@@ -217,7 +261,7 @@ test("download size mismatch preserves the current version and cleans temporary 
   const f = await fixture();
   await f.manager.install("fixture");
   f.upstream.add("v2");
-  f.upstream.contentLength = script("v2").byteLength + 1;
+  f.upstream.contentLength = executable("v2").byteLength + 1;
   await expect(f.manager.update("fixture", { yes: true })).rejects.toThrow(
     "Content-Length",
   );
@@ -230,7 +274,7 @@ test("download size mismatch preserves the current version and cleans temporary 
 test("failed executable verification preserves the previous installation", async () => {
   const f = await fixture();
   await f.manager.install("fixture");
-  f.upstream.add("v2", new TextEncoder().encode("#!/bin/sh\nexit 2\n"));
+  f.upstream.add("v2", executable("broken"));
   await expect(f.manager.update("fixture", { yes: true })).rejects.toThrow(
     "Executable verification failed",
   );

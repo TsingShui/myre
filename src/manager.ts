@@ -122,13 +122,17 @@ export class ToolManager {
     definitions: readonly ToolDefinition[],
     options: ManagerOptions = {},
   ) {
+    this.platform = options.platform ?? {
+      os: process.platform,
+      arch: process.arch,
+    };
     const commands = new Set<string>();
     for (const tool of definitions) {
-      const command = tool.command ?? tool.name;
+      const command = this.command(tool);
       if (
         !/^[a-z0-9][a-z0-9_-]*$/.test(tool.name) ||
         !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(command) ||
-        command === "receipt.json"
+        command.toLowerCase() === "receipt.json"
       ) {
         throw new Error(`Invalid tool name or command: ${tool.name}`);
       }
@@ -138,23 +142,20 @@ export class ToolManager {
       ) {
         throw new Error(`Invalid GitHub repository: ${tool.repository}`);
       }
-      if (this.definitions.has(tool.name) || commands.has(command))
+      const commandKey = this.windows ? command.toLowerCase() : command;
+      if (this.definitions.has(tool.name) || commands.has(commandKey))
         throw new Error(`Duplicate tool name or command: ${tool.name}`);
       this.definitions.set(tool.name, tool);
-      commands.add(command);
+      commands.add(commandKey);
     }
     this.dataDir = resolve(
-      options.dataDir ?? process.env.MERE_HOME ?? join(homedir(), ".mere"),
+      options.dataDir ?? process.env.MYRE_HOME ?? join(homedir(), ".myre"),
     );
     this.binDir = resolve(
       options.binDir ??
-        process.env.MERE_BIN_DIR ??
+        process.env.MYRE_BIN_DIR ??
         join(homedir(), ".local/bin"),
     );
-    this.platform = options.platform ?? {
-      os: process.platform,
-      arch: process.arch,
-    };
     this.github = new GitHub(options.fetcher);
     this.log = options.log ?? console.log;
     this.confirm = options.confirm ?? (async () => false);
@@ -164,7 +165,7 @@ export class ToolManager {
     const tool = this.definitions.get(name);
     if (!tool)
       throw new Error(
-        `Unsupported tool: ${name}. Run mere list to view supported tools.`,
+        `Unsupported tool: ${name}. Run myre list to view supported tools.`,
       );
     return tool;
   }
@@ -173,23 +174,75 @@ export class ToolManager {
     return join(this.dataDir, "tools", tool.name);
   }
 
+  private get windows(): boolean {
+    return this.platform.os === "win32";
+  }
+
+  private command(tool: ToolDefinition): string {
+    const name = tool.command ?? tool.name;
+    return this.windows && !name.toLowerCase().endsWith(".exe")
+      ? `${name}.exe`
+      : name;
+  }
+
   private bin(tool: ToolDefinition): string {
-    return join(this.binDir, tool.command ?? tool.name);
+    return join(this.binDir, this.command(tool));
+  }
+
+  private current(tool: ToolDefinition): string {
+    return join(this.root(tool), this.windows ? "current.exe" : "current");
+  }
+
+  private activeExecutable(tool: ToolDefinition): string {
+    return this.windows
+      ? this.current(tool)
+      : join(this.current(tool), this.command(tool));
+  }
+
+  private samePath(left: string, right: string): boolean {
+    return this.windows
+      ? resolve(left).toLowerCase() === resolve(right).toLowerCase()
+      : resolve(left) === resolve(right);
+  }
+
+  private async executableExists(path: string): Promise<boolean> {
+    const file = await inspect(path);
+    return !!file?.isFile() && (this.windows || (file.mode & 0o111) !== 0);
+  }
+
+  private async createLink(
+    target: string,
+    path: string,
+    type: "file" | "dir",
+  ): Promise<void> {
+    try {
+      await symlink(target, path, type);
+    } catch (error) {
+      if (this.windows && (error as NodeJS.ErrnoException).code === "EPERM") {
+        throw new Error(
+          "Windows symbolic links require Developer Mode or symbolic-link privileges.",
+        );
+      }
+      throw error;
+    }
   }
 
   private async installation(
     tool: ToolDefinition,
   ): Promise<Installation | null> {
     const root = this.root(tool);
-    const current = join(root, "current");
+    const current = this.current(tool);
     const info = await inspect(current);
     if (!info) return null;
     if (!info.isSymbolicLink())
-      throw new Error(`Not a mere-managed version link: ${current}`);
-    const directory = resolve(root, await readlink(current));
+      throw new Error(`Not a myre-managed version link: ${current}`);
+    const target = resolve(root, await readlink(current));
+    const directory = this.windows ? dirname(target) : target;
     if (
-      dirname(directory) !== join(root, "versions") ||
-      !(await inspect(directory))?.isDirectory()
+      !this.samePath(dirname(directory), join(root, "versions")) ||
+      !(await inspect(directory))?.isDirectory() ||
+      (this.windows &&
+        !this.samePath(target, join(directory, this.command(tool))))
     ) {
       throw new Error(`Invalid installation directory: ${current}`);
     }
@@ -208,7 +261,7 @@ export class ToolManager {
       !receipt ||
       receipt.schema !== 1 ||
       receipt.tool !== tool.name ||
-      receipt.command !== (tool.command ?? tool.name) ||
+      receipt.command !== this.command(tool) ||
       receipt.repository !== tool.repository ||
       typeof receipt.tag !== "string" ||
       !receipt.tag ||
@@ -219,7 +272,7 @@ export class ToolManager {
       );
     return {
       receipt: receipt as Receipt,
-      executable: join(directory, tool.command ?? tool.name),
+      executable: join(directory, this.command(tool)),
     };
   }
 
@@ -228,13 +281,13 @@ export class ToolManager {
     const path = this.bin(tool);
     const info = await inspect(path);
     if (!info) return false;
-    const target = join(this.root(tool), "current", tool.command ?? tool.name);
+    const target = this.activeExecutable(tool);
     if (
       !info.isSymbolicLink() ||
-      resolve(dirname(path), await readlink(path)) !== target
+      !this.samePath(resolve(dirname(path), await readlink(path)), target)
     ) {
       throw new Error(
-        `Refusing to overwrite a file not owned by mere: ${path}`,
+        `Refusing to overwrite a file not owned by myre: ${path}`,
       );
     }
     return true;
@@ -243,10 +296,7 @@ export class ToolManager {
   private async ensureBin(tool: ToolDefinition): Promise<boolean> {
     if (await this.ownsBin(tool)) return false;
     await mkdir(this.binDir, { recursive: true });
-    await symlink(
-      join(this.root(tool), "current", tool.command ?? tool.name),
-      this.bin(tool),
-    );
+    await this.createLink(this.activeExecutable(tool), this.bin(tool), "file");
     return true;
   }
 
@@ -263,10 +313,8 @@ export class ToolManager {
         if (installation) {
           row.version = installation.receipt.tag;
           row.path = this.bin(tool);
-          const binary = await inspect(installation.executable);
           row.status =
-            binary?.isFile() &&
-            (binary.mode & 0o111) !== 0 &&
+            (await this.executableExists(installation.executable)) &&
             (await this.ownsBin(tool))
               ? "installed"
               : "broken";
@@ -287,8 +335,8 @@ export class ToolManager {
     tool: ToolDefinition,
     action: () => Promise<T>,
   ): Promise<T> {
-    if (this.platform.os !== "linux" && this.platform.os !== "darwin")
-      throw new Error("Installation currently supports Linux and macOS only.");
+    if (!["linux", "darwin", "win32"].includes(this.platform.os))
+      throw new Error("Installation supports Linux, macOS, and Windows.");
     const root = this.root(tool);
     await mkdir(root, { recursive: true });
     const path = join(root, ".lock");
@@ -325,8 +373,7 @@ export class ToolManager {
             `${name} is already installed at ${installed.receipt.tag}; use update to change versions.`,
           );
         }
-        const binary = await inspect(installed.executable);
-        if (binary?.isFile() && (binary.mode & 0o111) !== 0) {
+        if (await this.executableExists(installed.executable)) {
           await this.ensureBin(tool);
           this.log(
             `${name} is installed at ${installed.receipt.tag}: ${this.bin(tool)}`,
@@ -350,7 +397,7 @@ export class ToolManager {
       const installed = await this.installation(tool);
       if (!installed)
         throw new Error(
-          `${name} is not installed; run mere install ${name} first.`,
+          `${name} is not installed; run myre install ${name} first.`,
         );
       await this.ownsBin(tool);
       const release = await this.github.release(
@@ -359,8 +406,7 @@ export class ToolManager {
         tool.acceptRelease,
       );
       if (release.tag === installed.receipt.tag) {
-        const binary = await inspect(installed.executable);
-        if (binary?.isFile() && (binary.mode & 0o111) !== 0) {
+        if (await this.executableExists(installed.executable)) {
           await this.ensureBin(tool);
           this.log(`${name} is already at the latest release: ${release.tag}`);
         } else {
@@ -451,11 +497,11 @@ export class ToolManager {
         if (`sha256:${hasher.digest("hex")}` !== selection.digest.toLowerCase())
           throw new Error("SHA-256 verification failed.");
       }
-      const executable = join(staging, tool.command ?? tool.name);
+      const executable = join(staging, this.command(tool));
       await extract(archive, executable, selection);
       if (!(await stat(executable)).size)
         throw new Error("The selected executable is empty.");
-      await chmod(executable, 0o755);
+      if (!this.windows) await chmod(executable, 0o755);
       const child = Bun.spawn([executable, ...tool.verifyArgs], {
         stdout: "pipe",
         stderr: "pipe",
@@ -473,7 +519,7 @@ export class ToolManager {
       const receipt: Receipt = {
         schema: 1,
         tool: tool.name,
-        command: tool.command ?? tool.name,
+        command: this.command(tool),
         repository: tool.repository,
         tag: release.tag,
         asset: selection.name,
@@ -487,8 +533,15 @@ export class ToolManager {
       await rename(staging, directory);
       binCreated = await this.ensureBin(tool);
       // Receipt and executable move together: a single atomic link switch commits both.
-      await symlink(relative(root, directory), temporaryLink);
-      await rename(temporaryLink, join(root, "current"));
+      const target = this.windows
+        ? join(directory, this.command(tool))
+        : directory;
+      await this.createLink(
+        relative(root, target),
+        temporaryLink,
+        this.windows ? "file" : "dir",
+      );
+      await rename(temporaryLink, this.current(tool));
       committed = true;
       this.log(`${tool.name} installed at ${release.tag}: ${this.bin(tool)}`);
     } finally {

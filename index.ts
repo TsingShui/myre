@@ -2,12 +2,12 @@
 import { ToolManager } from "./src/manager";
 import { tools } from "./src/tools";
 
-const help = `mere - reverse-engineering CLI tool manager
+const help = `myre - reverse-engineering CLI tool manager
 
 Usage:
-  mere list
-  mere install <tool> [--version <tag>]
-  mere update <tool> [--yes]
+  myre list
+  myre install <tool> [--version <tag>]
+  myre update <tool> [--yes]
 
 list reads local state without network access.
 install defaults to the public upstream Latest release.

@@ -21,7 +21,7 @@ export class GitHub {
         method,
         redirect: method === "HEAD" ? "manual" : "follow",
         credentials: "omit",
-        headers: { "User-Agent": "mere", "Accept-Encoding": "identity" },
+        headers: { "User-Agent": "myre", "Accept-Encoding": "identity" },
         signal: AbortSignal.timeout(method === "HEAD" ? 30_000 : 300_000),
       });
     } catch (error) {
