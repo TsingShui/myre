@@ -78,6 +78,61 @@ function validateEntry(selection: AssetSelection): string {
   return validateBinaryPath(selection.binaryPath ?? "");
 }
 
+function displaySize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+}
+
+async function downloadWithProgress(
+  response: Response,
+  path: string,
+  length: string | null,
+): Promise<void> {
+  if (
+    length !== null &&
+    (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)))
+  ) {
+    await response.body?.cancel();
+    throw new Error("Invalid download Content-Length.");
+  }
+  const total = length === null ? undefined : Number(length);
+  if (!process.stderr.isTTY || !response.body) {
+    await Bun.write(path, response);
+    return;
+  }
+  let received = 0;
+  let lastUpdate = 0;
+  const show = () => {
+    const progress =
+      total && total > 0
+        ? `${Math.min(100, (received / total) * 100).toFixed(1)}% (${displaySize(received)} / ${displaySize(total)})`
+        : displaySize(received);
+    process.stderr.write(`\r\x1b[2KDownloading: ${progress}`);
+  };
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        received += chunk.byteLength;
+        if (Date.now() - lastUpdate >= 100) {
+          show();
+          lastUpdate = Date.now();
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  show();
+  try {
+    await Bun.write(path, new Response(body));
+    show();
+  } finally {
+    process.stderr.write("\n");
+  }
+}
+
 async function extract(
   archive: string,
   output: string,
@@ -564,7 +619,7 @@ export class ToolManager {
         !encoding || encoding === "identity"
           ? response.headers.get("content-length")
           : null;
-      await Bun.write(archive, response);
+      await downloadWithProgress(response, archive, length);
       if (
         length !== null &&
         (!/^\d+$/.test(length) || (await stat(archive)).size !== Number(length))

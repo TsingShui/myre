@@ -35,7 +35,7 @@ myre uninstall diana
 
 ## Catalog and Paths
 
-`install` and `update` refresh the tool catalog, falling back to a cached or bundled copy. `list` and `uninstall` work offline; use `list --refresh` to fetch the catalog.
+`install` and `update` refresh the tool catalog, falling back to a cached or bundled copy, and show download progress in a terminal. `list` and `uninstall` work offline; use `list --refresh` to fetch the catalog.
 
 Tools and the catalog cache live in `~/.myre`; command links go in `~/.local/bin`. Override these with `MYRE_HOME` and `MYRE_BIN_DIR`. Windows requires Developer Mode or symbolic-link privileges.
 
