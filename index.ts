@@ -117,4 +117,5 @@ export async function main(args = Bun.argv.slice(2)): Promise<number> {
   }
 }
 
-if (import.meta.main) process.exitCode = await main();
+// This executable entry point must also start after a compiled binary is relocated.
+process.exitCode = await main();

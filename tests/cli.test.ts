@@ -23,8 +23,8 @@ test("npm CLI uses the matching binary, reads ~/.myre/tools, and preserves exit 
     XDG_CACHE_HOME: join(directory, "cache"),
     npm_config_update_notifier: "false",
   };
-  const invoke = async (args: string[]) => {
-    const child = Bun.spawn([...(await npmCommand()), ...args], {
+  const capture = async (args: string[]) => {
+    const child = Bun.spawn(args, {
       cwd: consumer,
       env,
       stdout: "pipe",
@@ -38,6 +38,8 @@ test("npm CLI uses the matching binary, reads ~/.myre/tools, and preserves exit 
     ]);
     return { stdout, stderr, exitCode };
   };
+  const invoke = async (args: string[]) =>
+    capture([...(await npmCommand()), ...args]);
   const flags = [
     "--offline",
     "--cache",
@@ -139,6 +141,12 @@ test("npm CLI uses the matching binary, reads ~/.myre/tools, and preserves exit 
     );
 
     const list = await run("list");
+    if (list.exitCode !== 0 || !list.stdout) {
+      const direct = await capture([executable, "list"]);
+      throw new Error(
+        `CLI startup failed: ${JSON.stringify({ npm: list, direct })}`,
+      );
+    }
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toContain(
       `diana\tInstalled\tdiana-v0.2.7\t${join(bin, command)}`,
